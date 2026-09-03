@@ -9,6 +9,7 @@ export interface ModelConfig {
   model: string;
   baseUrl: string;
   apiPath: string;
+  relayUrl: string;
   rememberKey: boolean;
 }
 
@@ -46,6 +47,7 @@ export const DEFAULT_CONFIG: ModelConfig = {
   model: '',
   baseUrl: 'https://api.openai.com/v1',
   apiPath: '/chat/completions',
+  relayUrl: 'https://wish-qiyu-ai-game.ansoncherico516233.chatgpt.site/api/chat',
   rememberKey: false,
 };
 
@@ -53,6 +55,13 @@ export const PROVIDER_PRESETS: Record<Protocol, Pick<ModelConfig, 'baseUrl' | 'a
   openai: { baseUrl: 'https://api.openai.com/v1', apiPath: '/chat/completions' },
   anthropic: { baseUrl: 'https://api.anthropic.com/v1', apiPath: '/messages' },
   gemini: { baseUrl: 'https://generativelanguage.googleapis.com/v1beta', apiPath: '/models/{model}:streamGenerateContent?alt=sse' },
+};
+
+export const DEEPSEEK_PRESET: Pick<ModelConfig, 'protocol' | 'model' | 'baseUrl' | 'apiPath'> = {
+  protocol: 'openai',
+  model: 'deepseek-v4-flash',
+  baseUrl: 'https://api.deepseek.com',
+  apiPath: '/chat/completions',
 };
 
 export const INITIAL_MESSAGES: Record<CharacterId, ChatMessage[]> = {
@@ -171,7 +180,7 @@ export async function streamModelReply(
 
   const body = requestBody(config, messages);
   const response = config.transport === 'relay'
-    ? await fetch('/api/chat', {
+    ? await fetch(config.relayUrl?.trim() || DEFAULT_CONFIG.relayUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-User-API-Key': apiKey },
         body: JSON.stringify({ protocol: config.protocol, baseUrl: config.baseUrl, apiPath: config.apiPath, body }),

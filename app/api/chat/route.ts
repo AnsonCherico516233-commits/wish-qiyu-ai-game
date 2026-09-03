@@ -5,8 +5,19 @@ type Protocol = 'openai' | 'anthropic' | 'gemini';
 const buckets = new Map<string, { count: number; resetAt: number }>();
 const MAX_REQUEST_BYTES = 64_000;
 
-function jsonError(message: string, status: number) {
-  return Response.json({ error: { message } }, { status });
+function corsHeaders(origin: string | null) {
+  const headers = new Headers({
+    'Access-Control-Allow-Headers': 'Content-Type, X-User-API-Key',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Max-Age': '86400',
+    Vary: 'Origin',
+  });
+  if (origin) headers.set('Access-Control-Allow-Origin', origin);
+  return headers;
+}
+
+function jsonError(message: string, status: number, origin: string | null = null) {
+  return Response.json({ error: { message } }, { status, headers: corsHeaders(origin) });
 }
 
 function isPrivateIpv4(hostname: string) {
@@ -39,8 +50,11 @@ function safeUpstream(baseUrl: unknown, apiPath: unknown) {
 function allowedOrigin(request: Request) {
   const origin = request.headers.get('origin');
   const fetchSite = request.headers.get('sec-fetch-site');
-  if (!origin) return false;
-  return origin === new URL(request.url).origin && (!fetchSite || fetchSite === 'same-origin');
+  if (!origin) return null;
+  const sameOrigin = origin === new URL(request.url).origin && (!fetchSite || fetchSite === 'same-origin');
+  const githubPages = /^https:\/\/[a-z\d](?:[a-z\d-]{0,37}[a-z\d])?\.github\.io$/i.test(origin) &&
+    (!fetchSite || fetchSite === 'cross-site' || fetchSite === 'same-site');
+  return sameOrigin || githubPages ? origin : null;
 }
 
 function rateLimited(request: Request) {
@@ -63,28 +77,35 @@ function bodyLooksSafe(body: unknown) {
   return JSON.stringify(body).length <= MAX_REQUEST_BYTES;
 }
 
+export function OPTIONS(request: Request) {
+  const origin = allowedOrigin(request);
+  if (!origin) return jsonError('仅允许从本站或 GitHub Pages 发起中转请求', 403);
+  return new Response(null, { status: 204, headers: corsHeaders(origin) });
+}
+
 export async function POST(request: Request) {
-  if (!allowedOrigin(request)) return jsonError('仅允许从本站发起中转请求', 403);
-  if (rateLimited(request)) return jsonError('请求过于频繁，请稍后再试', 429);
+  const origin = allowedOrigin(request);
+  if (!origin) return jsonError('仅允许从本站或 GitHub Pages 发起中转请求', 403);
+  if (rateLimited(request)) return jsonError('请求过于频繁，请稍后再试', 429, origin);
 
   const apiKey = request.headers.get('x-user-api-key')?.trim();
-  if (!apiKey || apiKey.length > 500) return jsonError('缺少有效的 API Key', 400);
+  if (!apiKey || apiKey.length > 500) return jsonError('缺少有效的 API Key', 400, origin);
   const contentLength = Number(request.headers.get('content-length') || 0);
-  if (contentLength > MAX_REQUEST_BYTES) return jsonError('请求内容过大', 413);
+  if (contentLength > MAX_REQUEST_BYTES) return jsonError('请求内容过大', 413, origin);
 
   let payload: { protocol?: Protocol; baseUrl?: unknown; apiPath?: unknown; body?: unknown };
   try {
     const raw = await request.text();
-    if (raw.length > MAX_REQUEST_BYTES) return jsonError('请求内容过大', 413);
+    if (raw.length > MAX_REQUEST_BYTES) return jsonError('请求内容过大', 413, origin);
     payload = JSON.parse(raw);
   } catch {
-    return jsonError('请求格式不是有效 JSON', 400);
+    return jsonError('请求格式不是有效 JSON', 400, origin);
   }
 
-  if (!['openai', 'anthropic', 'gemini'].includes(payload.protocol || '')) return jsonError('不支持的接口协议', 400);
-  if (!bodyLooksSafe(payload.body)) return jsonError('消息格式无效或上下文过长', 400);
+  if (!['openai', 'anthropic', 'gemini'].includes(payload.protocol || '')) return jsonError('不支持的接口协议', 400, origin);
+  if (!bodyLooksSafe(payload.body)) return jsonError('消息格式无效或上下文过长', 400, origin);
   const upstream = safeUpstream(payload.baseUrl, payload.apiPath);
-  if (!upstream) return jsonError('中转仅允许公开 HTTPS 地址与安全路径', 400);
+  if (!upstream) return jsonError('中转仅允许公开 HTTPS 地址与安全路径', 400, origin);
 
   const headers = new Headers({ 'Content-Type': 'application/json', Accept: 'text/event-stream, application/json' });
   if (payload.protocol === 'anthropic') {
@@ -100,11 +121,11 @@ export async function POST(request: Request) {
   try {
     upstreamResponse = await fetch(upstream, { method: 'POST', headers, body: JSON.stringify(payload.body), redirect: 'manual' });
   } catch {
-    return jsonError('无法连接模型服务，请检查 Base URL、路径或改用直连模式', 502);
+    return jsonError('无法连接模型服务，请检查 Base URL、路径或改用直连模式', 502, origin);
   }
-  if (upstreamResponse.status >= 300 && upstreamResponse.status < 400) return jsonError('为安全起见，中转不跟随模型服务重定向', 502);
+  if (upstreamResponse.status >= 300 && upstreamResponse.status < 400) return jsonError('为安全起见，中转不跟随模型服务重定向', 502, origin);
 
-  const responseHeaders = new Headers();
+  const responseHeaders = corsHeaders(origin);
   responseHeaders.set('Content-Type', upstreamResponse.headers.get('content-type') || 'application/json; charset=utf-8');
   responseHeaders.set('Cache-Control', 'no-store');
   responseHeaders.set('X-Content-Type-Options', 'nosniff');

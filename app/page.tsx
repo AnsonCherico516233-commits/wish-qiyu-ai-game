@@ -46,6 +46,7 @@ import {
   CharacterId,
   ChatMessage,
   DEFAULT_CONFIG,
+  DEEPSEEK_PRESET,
   INITIAL_MESSAGES,
   INITIAL_STORY,
   ModelConfig,
@@ -127,7 +128,7 @@ export default function Home() {
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    setConfig(storageRead(STORAGE.config, DEFAULT_CONFIG));
+    setConfig({ ...DEFAULT_CONFIG, ...storageRead<Partial<ModelConfig>>(STORAGE.config, {}) });
     setProfile(storageRead(STORAGE.profile, emptyProfile));
     setMessages(storageRead(STORAGE.messages, INITIAL_MESSAGES));
     setStory(storageRead(STORAGE.story, INITIAL_STORY));
@@ -270,7 +271,16 @@ export default function Home() {
   }
 
   function changeProtocol(protocol: ModelConfig['protocol']) {
-    setConfig((current) => ({ ...current, protocol, ...PROVIDER_PRESETS[protocol] }));
+    setConfig((current) => {
+      const isSameProvider = current.protocol === protocol &&
+        !(protocol === 'openai' && /^https:\/\/api\.deepseek\.com\/?$/i.test(current.baseUrl.trim()));
+      return { ...current, protocol, ...PROVIDER_PRESETS[protocol], model: isSameProvider ? current.model : '' };
+    });
+    setTestState('idle');
+  }
+
+  function useDeepSeek() {
+    setConfig((current) => ({ ...current, ...DEEPSEEK_PRESET }));
     setTestState('idle');
   }
 
@@ -379,7 +389,7 @@ export default function Home() {
         <RightPanel story={story} profile={profile} connected={connected} protocol={config.protocol} onSettings={() => setConfigOpen(true)} />
       </section>
 
-      <ModelSettings open={configOpen} onOpenChange={setConfigOpen} config={config} setConfig={setConfig} apiKey={apiKey} setApiKey={setApiKey} changeProtocol={changeProtocol} testState={testState} onTest={() => void testConnection()} onReset={resetGame} />
+      <ModelSettings open={configOpen} onOpenChange={setConfigOpen} config={config} setConfig={setConfig} apiKey={apiKey} setApiKey={setApiKey} changeProtocol={changeProtocol} useDeepSeek={useDeepSeek} testState={testState} onTest={() => void testConnection()} onReset={resetGame} />
 
       <Dialog open={ready && !profile.completed}>
         <DialogContent showCloseButton={false} className="max-h-[calc(100dvh-24px)] overflow-y-auto rounded-[26px] border border-white/80 bg-[#fbf8fc] p-0 shadow-[0_30px_100px_rgba(69,54,92,.24)] sm:max-w-[540px]">
@@ -472,17 +482,19 @@ function RightPanel({ story, profile, connected, protocol, onSettings }: { story
   </aside>;
 }
 
-function ModelSettings({ open, onOpenChange, config, setConfig, apiKey, setApiKey, changeProtocol, testState, onTest, onReset }: {
+function ModelSettings({ open, onOpenChange, config, setConfig, apiKey, setApiKey, changeProtocol, useDeepSeek, testState, onTest, onReset }: {
   open: boolean; onOpenChange: (open: boolean) => void; config: ModelConfig; setConfig: React.Dispatch<React.SetStateAction<ModelConfig>>;
   apiKey: string; setApiKey: (value: string) => void; changeProtocol: (value: ModelConfig['protocol']) => void;
+  useDeepSeek: () => void;
   testState: 'idle' | 'testing' | 'success' | 'error'; onTest: () => void; onReset: () => void;
 }) {
+  const isDeepSeek = config.protocol === 'openai' && /^https:\/\/api\.deepseek\.com\/?$/i.test(config.baseUrl.trim());
   return <Sheet open={open} onOpenChange={onOpenChange}><SheetContent className="w-[min(440px,94vw)] overflow-y-auto border-l border-border bg-[#fbf9fc] p-0 sm:max-w-[440px]">
     <SheetHeader className="border-b border-border/70 px-6 py-5"><div className="flex items-center gap-3"><span className="grid size-10 place-items-center rounded-2xl bg-primary/10 text-primary"><KeyRound className="size-4" /></span><div><SheetTitle>连接 AI 模型</SheetTitle><SheetDescription className="mt-1 text-xs">由每位玩家填写自己的模型服务</SheetDescription></div></div></SheetHeader>
     <div className="space-y-6 px-6 pb-8 pt-5">
-      <section><p className="mb-3 text-[11px] font-medium uppercase tracking-[.14em] text-muted-foreground">接口协议</p><div className="grid grid-cols-3 gap-2">{(['openai', 'anthropic', 'gemini'] as const).map((value) => <button key={value} onClick={() => changeProtocol(value)} className={`rounded-xl border px-2 py-2.5 text-xs transition ${config.protocol === value ? 'border-primary/30 bg-primary/10 text-primary' : 'border-border bg-card hover:border-primary/20'}`}>{value === 'openai' ? 'OpenAI 兼容' : value === 'anthropic' ? 'Claude' : 'Gemini'}</button>)}</div><p className="mt-2 text-[11px] leading-5 text-muted-foreground">OpenAI 兼容适用于 OpenAI、DeepSeek、OpenRouter、硅基流动及多数中转站。</p></section>
-      <section className="space-y-4"><Field label="模型名称"><Input value={config.model} onChange={(event) => setConfig((current) => ({ ...current, model: event.target.value }))} placeholder="例如：gpt-4.1-mini" className="h-10 rounded-xl bg-card" autoComplete="off" /></Field><Field label="API Key"><Input type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder="sk-…" className="h-10 rounded-xl bg-card" autoComplete="off" /></Field><Field label="API Base URL"><Input value={config.baseUrl} onChange={(event) => setConfig((current) => ({ ...current, baseUrl: event.target.value }))} placeholder="https://api.example.com/v1" className="h-10 rounded-xl bg-card" autoComplete="url" /></Field><Field label="API 路径"><Input value={config.apiPath} onChange={(event) => setConfig((current) => ({ ...current, apiPath: event.target.value }))} placeholder="/chat/completions" className="h-10 rounded-xl bg-card font-mono text-xs" autoComplete="off" /><p className="mt-1.5 text-[10px] leading-4 text-muted-foreground">Gemini 路径可使用 {'{model}'} 占位符。</p></Field></section>
-      <section><p className="mb-3 text-[11px] font-medium uppercase tracking-[.14em] text-muted-foreground">连接方式</p><NativeSelect value={config.transport} onChange={(event) => setConfig((current) => ({ ...current, transport: event.target.value as ModelConfig['transport'] }))} className="w-full"><NativeSelectOption value="relay">本站安全中转（解决 CORS）</NativeSelectOption><NativeSelectOption value="direct">浏览器直连（服务需允许 CORS）</NativeSelectOption></NativeSelect><div className="mt-3 rounded-xl bg-[#eef3f4] px-3 py-2.5 text-[11px] leading-5 text-[#58727a]"><ShieldCheck className="mr-1.5 inline size-4" />{config.transport === 'relay' ? 'Key 仅随当前请求转发，不写入服务器日志或数据库；中转拒绝内网地址、重定向和非 HTTPS 目标。' : '请求从浏览器直接发往模型服务，本站不经过 Key；如果遇到 CORS 报错，请切换到安全中转。'}</div></section>
+      <section><p className="mb-3 text-[11px] font-medium uppercase tracking-[.14em] text-muted-foreground">模型服务</p><div className="grid grid-cols-2 gap-2"><button onClick={() => changeProtocol('openai')} className={`rounded-xl border px-2 py-2.5 text-xs transition ${config.protocol === 'openai' && !isDeepSeek ? 'border-primary/30 bg-primary/10 text-primary' : 'border-border bg-card hover:border-primary/20'}`}>OpenAI 兼容</button><button onClick={useDeepSeek} className={`rounded-xl border px-2 py-2.5 text-xs transition ${isDeepSeek ? 'border-primary/30 bg-primary/10 text-primary' : 'border-border bg-card hover:border-primary/20'}`}>DeepSeek</button><button onClick={() => changeProtocol('anthropic')} className={`rounded-xl border px-2 py-2.5 text-xs transition ${config.protocol === 'anthropic' ? 'border-primary/30 bg-primary/10 text-primary' : 'border-border bg-card hover:border-primary/20'}`}>Claude</button><button onClick={() => changeProtocol('gemini')} className={`rounded-xl border px-2 py-2.5 text-xs transition ${config.protocol === 'gemini' ? 'border-primary/30 bg-primary/10 text-primary' : 'border-border bg-card hover:border-primary/20'}`}>Gemini</button></div><p className="mt-2 text-[11px] leading-5 text-muted-foreground">DeepSeek 会一键填入官方 Base URL、Chat Completions 路径和 deepseek-v4-flash；仍可手动换成 Pro 或中转站模型名。</p></section>
+      <section className="space-y-4"><Field label="模型名称"><Input value={config.model} onChange={(event) => setConfig((current) => ({ ...current, model: event.target.value }))} placeholder="例如：deepseek-v4-flash" className="h-10 rounded-xl bg-card" autoComplete="off" /></Field><Field label="API Key"><Input type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder="sk-…" className="h-10 rounded-xl bg-card" autoComplete="off" /></Field><Field label="API Base URL"><Input value={config.baseUrl} onChange={(event) => setConfig((current) => ({ ...current, baseUrl: event.target.value }))} placeholder="https://api.example.com/v1" className="h-10 rounded-xl bg-card" autoComplete="url" /></Field><Field label="API 路径"><Input value={config.apiPath} onChange={(event) => setConfig((current) => ({ ...current, apiPath: event.target.value }))} placeholder="/chat/completions" className="h-10 rounded-xl bg-card font-mono text-xs" autoComplete="off" /><p className="mt-1.5 text-[10px] leading-4 text-muted-foreground">Gemini 路径可使用 {'{model}'} 占位符。</p></Field></section>
+      <section><p className="mb-3 text-[11px] font-medium uppercase tracking-[.14em] text-muted-foreground">连接方式</p><NativeSelect value={config.transport} onChange={(event) => setConfig((current) => ({ ...current, transport: event.target.value as ModelConfig['transport'] }))} className="w-full"><NativeSelectOption value="relay">安全中转（解决 CORS）</NativeSelectOption><NativeSelectOption value="direct">浏览器直连（服务需允许 CORS）</NativeSelectOption></NativeSelect>{config.transport === 'relay' && <div className="mt-4"><Field label="中转服务 URL"><Input value={config.relayUrl} onChange={(event) => setConfig((current) => ({ ...current, relayUrl: event.target.value }))} placeholder="https://example.com/api/chat" className="h-10 rounded-xl bg-card font-mono text-[11px]" autoComplete="url" /><p className="mt-1.5 text-[10px] leading-4 text-muted-foreground">GitHub Pages 会使用这里的 HTTPS 中转；你也可以替换为自己的兼容服务。</p></Field></div>}<div className="mt-3 rounded-xl bg-[#eef3f4] px-3 py-2.5 text-[11px] leading-5 text-[#58727a]"><ShieldCheck className="mr-1.5 inline size-4" />{config.transport === 'relay' ? 'Key 仅随当前请求转发，不写入服务器日志或数据库；中转拒绝内网地址、重定向和非 HTTPS 目标。' : '请求从浏览器直接发往模型服务，本站不经过 Key；如果遇到 CORS 报错，请切换到安全中转。'}</div></section>
       <section className="flex items-center justify-between rounded-xl border border-border bg-card px-3.5 py-3"><div><p className="text-xs font-medium">在此设备记住 Key</p><p className="mt-1 text-[10px] text-muted-foreground">关闭时只保留在当前页面内存</p></div><Switch checked={config.rememberKey} onCheckedChange={(checked) => setConfig((current) => ({ ...current, rememberKey: checked }))} aria-label="在此设备记住 API Key" /></section>
       <div className="flex gap-2"><Button className="h-10 flex-1 rounded-xl" onClick={onTest} disabled={testState === 'testing'}>{testState === 'testing' ? <LoaderCircle className="animate-spin" /> : testState === 'success' ? <Check /> : <RefreshCw />}{testState === 'testing' ? '正在测试' : testState === 'success' ? '再次测试' : '测试连接'}</Button><Button variant="outline" className="h-10 rounded-xl" onClick={() => onOpenChange(false)}>保存设置</Button></div>
       <div className="border-t border-border pt-5"><button onClick={onReset} className="flex items-center gap-2 text-xs text-[#a15f59] hover:underline"><Trash2 className="size-4" />清除本设备全部数据并重新开始</button></div>
