@@ -74,6 +74,42 @@
 .smooth-scroll::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 999px; background: rgba(132,115,158,.24); background-clip: padding-box; }
 .smooth-scroll::-webkit-scrollbar-thumb:hover { background: rgba(132,115,158,.42); background-clip: padding-box; }
 
+.story-copy {
+  font-family: "Songti SC", SimSun, "Noto Serif SC", Georgia, serif;
+  color: color-mix(in oklab, var(--foreground) 91%, #765e6d 9%);
+  font-size: clamp(1rem, .94rem + .18vw, 1.075rem);
+  line-height: 2.05;
+  letter-spacing: .035em;
+  text-align: justify;
+  text-wrap: pretty;
+}
+
+.story-copy p {
+  text-indent: 2em;
+  text-shadow: 0 1px 0 rgba(255,255,255,.58);
+}
+
+.story-copy p:first-child::first-letter {
+  float: left;
+  margin: .13em .14em 0 0;
+  color: #9a788b;
+  font-size: 2.35em;
+  font-weight: 700;
+  line-height: .82;
+  text-indent: 0;
+}
+
+.story-dialogue {
+  color: #b77f8b;
+  font-weight: 800;
+  letter-spacing: .045em;
+  text-shadow: 0 1px 0 rgba(255,255,255,.72), 0 5px 18px rgba(183,127,139,.12);
+}
+
+.dark .story-copy { color: var(--foreground); }
+.dark .story-copy p { text-shadow: none; }
+.dark .story-dialogue { color: #e0aeb9; text-shadow: 0 5px 18px rgba(224,174,185,.12); }
+
 @media (prefers-reduced-motion: reduce) {
   html, .smooth-scroll { scroll-behavior: auto; }
 }

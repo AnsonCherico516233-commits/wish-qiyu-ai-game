@@ -3,6 +3,7 @@
 import { FormEvent, KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft,
+  BookOpenText,
   Bookmark,
   Check,
   ChevronRight,
@@ -68,11 +69,40 @@ const contacts = {
   xiaoyu: { name: '小鱼', avatar: '鱼', subtitle: '信号微弱 · 来自另一侧', tone: 'from-[#b69ac5] to-[#7185b2]' },
 };
 
-const moments = [
-  { name: '祁煜', avatar: '祁', time: '12分钟前', text: '颜料里少了一种只在清晨出现的蓝。好在今天看见了。', art: '被晨光切成两半的调色盘，海蓝与淡金还未干透。', tag: '白沙湾', tone: 'from-[#89b8c5] to-[#8e87ac]', comment: '唐知理：所以画展的那幅完成了吗？' },
-  { name: '唐知理', avatar: '唐', time: '1小时前', text: '今日工作提醒：请某位大艺术家不要把“寻找灵感”当成失联的正式理由。', art: '办公桌上的展览清单，末尾压着一枚贝壳。', tag: '工作日常', tone: 'from-[#8f929d] to-[#5f6878]', comment: '祁煜：措辞不够准确，退回重写。' },
-  { name: '谭灵', avatar: '灵', time: '昨晚', text: '演出结束时，海边刚好起风。有人答应来看，最后只送来一束嘉兰百合。', art: '后台镜前一束卷瓣花，紫红花影落在节目单上。', tag: '散场之后', tone: 'from-[#a380ad] to-[#d19a9f]', comment: '祁煜：花比迟到的人准时。' },
+interface MomentItem {
+  id: string;
+  name: string;
+  avatar: string;
+  time: string;
+  text: string;
+  art: string;
+  tag: string;
+  tone: string;
+  comment: string;
+}
+
+const MOMENT_TONES = [
+  'from-[#89b8c5] to-[#8e87ac]',
+  'from-[#8f929d] to-[#5f6878]',
+  'from-[#a380ad] to-[#d19a9f]',
+  'from-[#c49ca8] to-[#7f91ae]',
 ];
+
+const MOMENT_LIBRARY: Array<Omit<MomentItem, 'id' | 'tone'>> = [
+  { name: '祁煜', avatar: '祁', time: '刚刚', text: '颜料里少了一种只在清晨出现的蓝。好在今天看见了。', art: '被晨光切成两半的调色盘，海蓝与淡金还未干透。', tag: '白沙湾', comment: '唐知理：所以画展的那幅完成了吗？' },
+  { name: '唐知理', avatar: '唐', time: '8分钟前', text: '今日工作提醒：请某位大艺术家不要把“寻找灵感”当成失联的正式理由。', art: '办公桌上的展览清单，末尾压着一枚贝壳。', tag: '工作日常', comment: '祁煜：措辞不够准确，退回重写。' },
+  { name: '谭灵', avatar: '灵', time: '23分钟前', text: '演出结束时，海边刚好起风。有人答应来看，最后只送来一束嘉兰百合。', art: '后台镜前一束卷瓣花，紫红花影落在节目单上。', tag: '散场之后', comment: '祁煜：花比迟到的人准时。' },
+  { name: '祁煜', avatar: '祁', time: '刚刚', text: '有人把伞忘在画室。雨停之前，失主最好亲自来取。', art: '窗边靠着一把浅色长伞，伞柄缠了一小段紫色丝带。', tag: 'Mo Art', comment: '唐知理：我作证，某人已经看那把伞五分钟了。' },
+  { name: '小鱼', avatar: '鱼', time: '信号延迟', text: '海面把同一轮月亮分成了两份。你看到的那一份，还完整吗？', art: '深蓝海面浮着断续银光，远处像有一座城市正在褪色。', tag: '另一侧', comment: '祁煜：……这条动态是谁发的？' },
+  { name: '唐知理', avatar: '唐', time: '31分钟前', text: '临时取消今日催稿。原因：画家本人声称要为一场“很重要的约会”调整配色。', art: '被红笔圈出的日程表旁，放着两张尚未使用的展览票。', tag: '行程变更', comment: '祁煜：引号可以删掉。' },
+];
+
+function fallbackMoments(seed = 0): MomentItem[] {
+  return Array.from({ length: 3 }, (_, index) => {
+    const source = MOMENT_LIBRARY[(seed * 2 + index) % MOMENT_LIBRARY.length];
+    return { ...source, id: `local-${seed}-${index}`, tone: MOMENT_TONES[(seed + index) % MOMENT_TONES.length] };
+  });
+}
 
 const locations = [
   { name: '你的住处', desc: '门铃响过两遍，秘密仍停在门外。', tag: '主线', icon: '⌂', wash: 'from-[#eadce9] to-[#f6edf0]' },
@@ -90,6 +120,7 @@ function conversationPreview(messages: ChatMessage[]) {
 }
 
 const MIN_STORY_CHARACTERS = 600;
+const MAP_UNLOCK_WISH = 30;
 
 function storyCharacterCount(paragraphs: string[]) {
   return paragraphs.join('').match(/[\u3400-\u9fff]/g)?.length || 0;
@@ -114,6 +145,30 @@ function parseStory(raw: string) {
   };
 }
 
+function parseMoments(raw: string, seed: number): MomentItem[] {
+  const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+  const start = cleaned.indexOf('{');
+  const end = cleaned.lastIndexOf('}');
+  if (start < 0 || end <= start) throw new Error('朋友圈内容无法解析');
+  const data = JSON.parse(cleaned.slice(start, end + 1));
+  if (!Array.isArray(data.moments) || data.moments.length < 3) throw new Error('朋友圈内容不完整');
+  return data.moments.slice(0, 3).map((rawItem: unknown, index: number) => {
+    const item = rawItem && typeof rawItem === 'object' ? rawItem as Record<string, unknown> : {};
+    const name = typeof item.name === 'string' ? item.name.slice(0, 12) : '祁煜';
+    return {
+      id: `ai-${seed}-${index}`,
+      name,
+      avatar: name.slice(0, 1) || '祁',
+      time: typeof item.time === 'string' ? item.time.slice(0, 12) : '刚刚',
+      text: typeof item.text === 'string' ? item.text.slice(0, 180) : '潮声刚刚更新了一条动态。',
+      art: typeof item.art === 'string' ? item.art.slice(0, 120) : '一张带着海风气息的照片。',
+      tag: typeof item.tag === 'string' ? item.tag.slice(0, 16) : '此刻',
+      tone: MOMENT_TONES[(seed + index) % MOMENT_TONES.length],
+      comment: typeof item.comment === 'string' ? item.comment.slice(0, 100) : '祁煜：被你看到了。',
+    };
+  });
+}
+
 export default function Home() {
   const [ready, setReady] = useState(false);
   const [view, setView] = useState<AppView>('chat');
@@ -123,6 +178,8 @@ export default function Home() {
   const [apiKey, setApiKey] = useState('');
   const [messages, setMessages] = useState<Record<CharacterId, ChatMessage[]>>(INITIAL_MESSAGES);
   const [story, setStory] = useState<StoryState>(INITIAL_STORY);
+  const [momentFeed, setMomentFeed] = useState<MomentItem[]>(() => fallbackMoments());
+  const [momentsBusy, setMomentsBusy] = useState(false);
   const [draft, setDraft] = useState('');
   const [configOpen, setConfigOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -134,6 +191,8 @@ export default function Home() {
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
   const stickToBottomRef = useRef(true);
+  const momentRefreshRef = useRef(0);
+  const momentsBusyRef = useRef(false);
 
   useEffect(() => {
     const storedConfig = storageRead<Partial<ModelConfig>>(STORAGE.config, {});
@@ -174,10 +233,10 @@ export default function Home() {
 
   const header = useMemo(() => {
     if (view === 'story') return { title: `第 ${story.chapter} 章 · ${story.place}`, subtitle: `${story.phase} · 世界线仍在轻轻偏移` };
-    if (view === 'moments') return { title: '朋友圈', subtitle: '现实被改写后，所有人都记得他' };
+    if (view === 'moments') return { title: '朋友圈', subtitle: momentsBusy ? '潮声正在带来新的动态…' : '每次进入，世界线都会刷新一次' };
     if (view === 'map') return { title: '邀约地图', subtitle: `${profile.city || '你的城市'} · 选择一个要去的地方` };
     return { title: active.name, subtitle: active.subtitle };
-  }, [view, story, profile.city, active]);
+  }, [view, story, profile.city, active, momentsBusy]);
 
   function requireConnection() {
     if (connected) return true;
@@ -323,6 +382,41 @@ export default function Home() {
     }
   }
 
+  async function refreshMoments() {
+    if (momentsBusyRef.current) return;
+    momentsBusyRef.current = true;
+    const seed = momentRefreshRef.current + 1;
+    momentRefreshRef.current = seed;
+    setMomentFeed(fallbackMoments(seed));
+    setMomentsBusy(true);
+
+    if (!connected) {
+      setMomentsBusy(false);
+      momentsBusyRef.current = false;
+      return;
+    }
+
+    let raw = '';
+    try {
+      await streamModelReply(config, apiKey, [
+        {
+          role: 'system',
+          content: `你为“如你所愿”文字游戏生成朋友圈。结合当前剧情创作3条刚刚发生的新动态，发布者从祁煜、唐知理、谭灵、小鱼中选择，内容彼此有关联但不剧透。涉及玩家时始终用第二人称“你”，绝不使用玩家姓名或“她/他”代称。文风七分白描三分抒情，可有成年人之间含蓄、明确自愿的暧昧张力，但不写露骨性行为。只返回合法JSON：{"moments":[{"name":"发布者","time":"刚刚或几分钟前","text":"动态正文","art":"配图的文字描述","tag":"短标签","comment":"一条角色评论"}]}。必须正好3条。`,
+        },
+        {
+          role: 'user',
+          content: `当前剧情：第${story.chapter}章，${story.phase}，地点${story.place}，许愿值${story.wish}%，情绪${story.mood}，线索${story.clue}。最近片段：${story.paragraphs.at(-1)?.slice(0, 220) || '暂无'}。请生成与此刻同步的新朋友圈。`,
+        },
+      ], (text) => { raw = text; });
+      setMomentFeed(parseMoments(raw, seed));
+    } catch (error) {
+      setNotice(`朋友圈已刷新为本地动态；AI 更新失败：${error instanceof Error ? error.message : '未知错误'}`);
+    } finally {
+      setMomentsBusy(false);
+      momentsBusyRef.current = false;
+    }
+  }
+
   function changeProtocol(protocol: ModelConfig['protocol']) {
     setConfig((current) => {
       const isSameProvider = current.protocol === protocol &&
@@ -341,7 +435,7 @@ export default function Home() {
     if (!window.confirm('确认清除本设备上的剧情、聊天、玩家资料与模型设置吗？')) return;
     Object.values(STORAGE).forEach((key) => localStorage.removeItem(key));
     setProfile(emptyProfile); setConfig(DEFAULT_CONFIG); setApiKey(''); setMessages(INITIAL_MESSAGES); setStory(INITIAL_STORY);
-    setActiveCharacter('qiyu'); setView('chat'); setConfigOpen(false); setNotice(''); setStoryRetryChoice('');
+    setActiveCharacter('qiyu'); setView('chat'); setMomentFeed(fallbackMoments()); setConfigOpen(false); setNotice(''); setStoryRetryChoice('');
   }
 
   function submitProfile(event: FormEvent<HTMLFormElement>) {
@@ -363,6 +457,16 @@ export default function Home() {
     setActiveCharacter(id);
   }
 
+  function openView(nextView: AppView) {
+    if (nextView === 'map' && story.wish < MAP_UNLOCK_WISH) {
+      setNotice(`邀约地图将在许愿值达到${MAP_UNLOCK_WISH}%后开启。当前为${story.wish}%，继续聊天或推进剧情即可积累。`);
+      return;
+    }
+    setNotice('');
+    setView(nextView);
+    if (nextView === 'moments') void refreshMoments();
+  }
+
   function trackChatScroll() {
     const pane = chatScrollRef.current;
     if (!pane) return;
@@ -370,7 +474,7 @@ export default function Home() {
   }
 
   const navItems: Array<{ id: AppView; label: string; icon: typeof Sparkles }> = [
-    { id: 'chat', label: '私信', icon: MessageCircleMore }, { id: 'story', label: '此刻', icon: Sparkles },
+    { id: 'chat', label: '私信', icon: MessageCircleMore }, { id: 'story', label: '剧情', icon: BookOpenText },
     { id: 'moments', label: '朋友圈', icon: UsersRound }, { id: 'map', label: '邀约', icon: MapPinned },
   ];
 
@@ -379,9 +483,9 @@ export default function Home() {
       <div className="tide-glow" aria-hidden="true" />
       <section className="mx-auto grid h-full min-h-0 max-w-[1480px] grid-cols-1 overflow-hidden border-white/70 bg-card/88 shadow-[0_30px_90px_rgba(71,58,96,.14)] backdrop-blur-xl md:h-[calc(100dvh-40px)] md:grid-cols-[76px_300px_minmax(0,1fr)] md:rounded-[26px] md:border xl:grid-cols-[76px_300px_minmax(0,1fr)_292px]">
         <nav className="smooth-scroll hidden min-h-0 flex-col items-center overflow-y-auto border-r border-border/80 bg-sidebar/75 py-5 md:flex" aria-label="主导航">
-          <button onClick={() => setView('chat')} className="mb-8 grid size-11 place-items-center rounded-2xl bg-primary text-primary-foreground shadow-[0_10px_28px_rgba(120,107,160,.28)]" aria-label="如你所愿首页"><Waves className="size-5" /></button>
+          <button onClick={() => openView('chat')} className="mb-8 grid size-11 place-items-center rounded-2xl bg-primary text-primary-foreground shadow-[0_10px_28px_rgba(120,107,160,.28)]" aria-label="如你所愿首页"><Waves className="size-5" /></button>
           <div className="flex flex-1 flex-col gap-3">
-            {navItems.map((item) => { const Icon = item.icon; return <Button key={item.id} size="icon-lg" variant={view === item.id ? 'default' : 'ghost'} className={`rounded-2xl ${view !== item.id ? 'text-muted-foreground' : ''}`} onClick={() => setView(item.id)} aria-label={item.label}><Icon /></Button>; })}
+            {navItems.map((item) => { const Icon = item.icon; const locked = item.id === 'map' && story.wish < MAP_UNLOCK_WISH; return <Button key={item.id} size="icon-lg" variant={view === item.id ? 'default' : 'ghost'} className={`rounded-2xl ${view !== item.id ? 'text-muted-foreground' : ''} ${locked ? 'opacity-55' : ''}`} onClick={() => openView(item.id)} aria-label={locked ? `${item.label}，许愿值${MAP_UNLOCK_WISH}%解锁` : item.label}>{locked ? <LockKeyhole /> : <Icon />}</Button>; })}
           </div>
           <Button size="icon-lg" variant="ghost" className="rounded-2xl text-muted-foreground" onClick={() => setConfigOpen(true)} aria-label="模型设置"><Settings2 /></Button>
         </nav>
@@ -408,8 +512,8 @@ export default function Home() {
             </div>
           ) : (
             <div className="space-y-2 p-3">
-              {navItems.filter((item) => item.id !== 'chat').map((item) => { const Icon = item.icon; return <button key={item.id} onClick={() => setView(item.id)} className={`flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left text-sm transition ${view === item.id ? 'bg-primary/10 text-primary' : 'hover:bg-muted/60'}`}><span className="grid size-9 place-items-center rounded-xl bg-card shadow-sm"><Icon className="size-4" /></span><span className="flex-1">{item.label}</span><ChevronRight className="size-4 opacity-45" /></button>; })}
-              <button onClick={() => { setView('chat'); selectCharacter('xiaoyu'); }} className="mt-5 flex w-full items-center gap-3 rounded-2xl bg-gradient-to-br from-[#eee8f4] to-[#e3edf1] px-4 py-4 text-left"><MoonStar className="size-5 text-[#7a7194]" /><span className="text-xs leading-5"><b className="block text-foreground">深夜频道</b><span className="text-muted-foreground">查看小鱼的未读信号</span></span></button>
+              {navItems.filter((item) => item.id !== 'chat').map((item) => { const Icon = item.icon; const locked = item.id === 'map' && story.wish < MAP_UNLOCK_WISH; return <button key={item.id} onClick={() => openView(item.id)} className={`flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left text-sm transition ${view === item.id ? 'bg-primary/10 text-primary' : 'hover:bg-muted/60'} ${locked ? 'opacity-60' : ''}`}><span className="grid size-9 place-items-center rounded-xl bg-card shadow-sm">{locked ? <LockKeyhole className="size-4" /> : <Icon className="size-4" />}</span><span className="flex-1">{item.label}{locked ? ` · ${MAP_UNLOCK_WISH}%解锁` : ''}</span><ChevronRight className="size-4 opacity-45" /></button>; })}
+              <button onClick={() => { openView('chat'); selectCharacter('xiaoyu'); }} className="mt-5 flex w-full items-center gap-3 rounded-2xl bg-gradient-to-br from-[#eee8f4] to-[#e3edf1] px-4 py-4 text-left"><MoonStar className="size-5 text-[#7a7194]" /><span className="text-xs leading-5"><b className="block text-foreground">深夜频道</b><span className="text-muted-foreground">查看小鱼的未读信号</span></span></button>
             </div>
           )}
         </aside>
@@ -417,7 +521,7 @@ export default function Home() {
         <section className="relative flex min-h-0 min-w-0 flex-col overflow-hidden bg-[#faf8fc]/55">
           <header className="flex h-[68px] shrink-0 items-center justify-between border-b border-border/70 bg-card/66 px-4 backdrop-blur-md sm:px-6">
             <div className="flex min-w-0 items-center gap-3">
-              {view === 'chat' ? <span className={`grid size-10 shrink-0 place-items-center rounded-[14px] bg-gradient-to-br ${active.tone} text-sm font-semibold text-white`}>{active.avatar}</span> : <span className="grid size-10 shrink-0 place-items-center rounded-[14px] bg-primary/10 text-primary">{view === 'story' ? <Sparkles className="size-4" /> : view === 'moments' ? <UsersRound className="size-4" /> : <MapPinned className="size-4" />}</span>}
+              {view === 'chat' ? <span className={`grid size-10 shrink-0 place-items-center rounded-[14px] bg-gradient-to-br ${active.tone} text-sm font-semibold text-white`}>{active.avatar}</span> : <span className="grid size-10 shrink-0 place-items-center rounded-[14px] bg-primary/10 text-primary">{view === 'story' ? <BookOpenText className="size-4" /> : view === 'moments' ? <UsersRound className="size-4" /> : <MapPinned className="size-4" />}</span>}
               <div className="min-w-0"><h2 className="truncate text-[15px] font-semibold">{header.title}</h2><p className="mt-0.5 truncate text-[11px] text-muted-foreground">{header.subtitle}</p></div>
             </div>
             <div className="flex gap-1">
@@ -431,8 +535,8 @@ export default function Home() {
 
           {view === 'chat' && <ChatView activeCharacter={activeCharacter} active={active} messages={activeMessages} busy={busy} endRef={messagesEndRef} scrollRef={chatScrollRef} onScroll={trackChatScroll} onSwitch={selectCharacter} onRetry={(messageId) => void sendMessage('', messageId)} />}
           {view === 'story' && <StoryView story={story} loading={storyBusy} onChoice={(choice) => void advanceStory(choice)} />}
-          {view === 'moments' && <MomentsView />}
-          {view === 'map' && <MapView city={profile.city} onVisit={(place) => void advanceStory(`前往${place}，触发一段与当前线索相连的线下剧情`)} />}
+          {view === 'moments' && <MomentsView moments={momentFeed} loading={momentsBusy} />}
+          {view === 'map' && <MapView city={profile.city} onVisit={(place) => void advanceStory(`你接受祁煜的邀约并前往「${place}」。下一段必须完整发生在「${place}」，围绕约会中的互动、环境细节与当前线索展开；始终用第二人称“你”叙述。`)} />}
 
           {view === 'chat' && (
             <footer className="shrink-0 border-t border-border/70 bg-card/72 p-3 backdrop-blur-md sm:p-4">
@@ -446,7 +550,7 @@ export default function Home() {
           )}
 
           <nav className="grid h-[60px] shrink-0 grid-cols-4 border-t border-border/75 bg-card/90 px-2 pb-[env(safe-area-inset-bottom)] md:hidden" aria-label="移动端主导航">
-            {navItems.map((item) => { const Icon = item.icon; return <button key={item.id} onClick={() => setView(item.id)} className={`flex flex-col items-center justify-center gap-1 text-[10px] ${view === item.id ? 'text-primary' : 'text-muted-foreground'}`}><Icon className="size-4" /><span>{item.label}</span></button>; })}
+            {navItems.map((item) => { const Icon = item.icon; const locked = item.id === 'map' && story.wish < MAP_UNLOCK_WISH; return <button key={item.id} onClick={() => openView(item.id)} className={`flex flex-col items-center justify-center gap-1 text-[10px] ${view === item.id ? 'text-primary' : 'text-muted-foreground'} ${locked ? 'opacity-55' : ''}`} aria-label={locked ? `${item.label}，许愿值${MAP_UNLOCK_WISH}%解锁` : item.label}>{locked ? <LockKeyhole className="size-4" /> : <Icon className="size-4" />}<span>{item.label}</span></button>; })}
           </nav>
         </section>
 
@@ -512,7 +616,7 @@ function StoryView({ story, loading, onChoice }: { story: StoryState; loading: b
         <div className="resonance-rings smaller" aria-hidden="true" /><p className="relative text-[10px] uppercase tracking-[.24em] text-white/70">Chapter {String(story.chapter).padStart(2, '0')} · Wish echo</p><h3 className="relative mt-8 font-serif text-2xl">{story.place}</h3><div className="relative mt-3 flex flex-wrap gap-2 text-[10px]"><span className="rounded-full bg-white/14 px-2.5 py-1 ring-1 ring-white/20">{story.phase}</span><span className="rounded-full bg-white/14 px-2.5 py-1 ring-1 ring-white/20">情绪 · {story.mood}</span><span className="rounded-full bg-white/14 px-2.5 py-1 ring-1 ring-white/20">回响 · {story.wish}%</span></div>
       </div>
       <div className="mx-auto max-w-2xl px-1 py-7 sm:px-5">
-        {loading ? <div className="space-y-4"><p className="flex items-center gap-2 font-serif text-sm text-primary"><LoaderCircle className="size-4 animate-spin" />潮声正在续写下一页</p>{[92, 100, 78, 96].map((width) => <div key={width} className="h-3 rounded-full bg-muted animate-pulse" style={{ width: `${width}%` }} />)}</div> : <div className="story-copy space-y-5">{story.paragraphs.map((paragraph, index) => <p key={`${paragraph.slice(0, 12)}-${index}`}>{paragraph}</p>)}</div>}
+        {loading ? <div className="space-y-4"><p className="flex items-center gap-2 font-serif text-sm text-primary"><LoaderCircle className="size-4 animate-spin" />潮声正在续写下一页</p>{[92, 100, 78, 96].map((width) => <div key={width} className="h-3 rounded-full bg-muted animate-pulse" style={{ width: `${width}%` }} />)}</div> : <div className="story-copy space-y-5">{story.paragraphs.map((paragraph, index) => <StoryParagraph key={`${paragraph.slice(0, 12)}-${index}`} text={paragraph} />)}</div>}
         <div className="my-7 flex items-center gap-3"><span className="h-px flex-1 bg-border" /><span className="flex items-center gap-1.5 text-[10px] tracking-[.16em] text-muted-foreground"><Bookmark className="size-3.5" />线索 · {story.clue}</span><span className="h-px flex-1 bg-border" /></div>
         <div className="space-y-2.5"><p className="mb-3 text-[11px] font-medium tracking-[.12em] text-muted-foreground">你的选择</p>{story.choices.map((choice, index) => <button key={choice} disabled={loading} onClick={() => onChoice(choice)} className="group flex w-full items-center gap-3 rounded-2xl border border-border bg-card px-4 py-3.5 text-left text-sm leading-6 shadow-[0_4px_18px_rgba(78,65,101,.05)] transition hover:-translate-y-0.5 hover:border-primary/35 hover:shadow-[0_8px_22px_rgba(78,65,101,.09)] disabled:opacity-50"><span className="grid size-7 shrink-0 place-items-center rounded-full bg-primary/10 font-serif text-xs text-primary">{String.fromCharCode(65 + index)}</span><span className="flex-1">{choice}</span><ChevronRight className="size-4 text-muted-foreground transition group-hover:translate-x-0.5 group-hover:text-primary" /></button>)}</div>
       </div>
@@ -520,9 +624,14 @@ function StoryView({ story, loading, onChoice }: { story: StoryState; loading: b
   </div>;
 }
 
-function MomentsView() {
+function StoryParagraph({ text }: { text: string }) {
+  const parts = text.split(/(“[^”]+”|「[^」]+」|『[^』]+』)/g).filter(Boolean);
+  return <p>{parts.map((part, index) => /^(“|「|『)/.test(part) ? <strong key={`${index}-${part.slice(0, 8)}`} className="story-dialogue">{part}</strong> : <span key={`${index}-${part.slice(0, 8)}`}>{part}</span>)}</p>;
+}
+
+function MomentsView({ moments, loading }: { moments: MomentItem[]; loading: boolean }) {
   const [liked, setLiked] = useState<number[]>([]);
-  return <div tabIndex={0} aria-label="朋友圈内容" className="smooth-scroll min-h-0 flex-1 overflow-y-scroll px-4 py-5 focus:outline-none sm:px-7"><div className="mx-auto max-w-2xl space-y-4">{moments.map((moment, index) => <article key={moment.name + moment.time} className="rounded-[22px] border border-border/75 bg-card/88 p-5 shadow-[0_8px_30px_rgba(76,62,95,.06)]">
+  return <div tabIndex={0} aria-label="朋友圈内容" className="smooth-scroll min-h-0 flex-1 overflow-y-scroll px-4 py-5 focus:outline-none sm:px-7"><div className="mx-auto max-w-2xl space-y-4">{loading && <div className="flex items-center justify-center gap-2 rounded-2xl border border-primary/10 bg-primary/5 px-4 py-3 text-xs text-primary"><LoaderCircle className="size-3.5 animate-spin" />正在同步这条世界线的最新动态</div>}{moments.map((moment, index) => <article key={moment.id} className="rounded-[22px] border border-border/75 bg-card/88 p-5 shadow-[0_8px_30px_rgba(76,62,95,.06)]">
     <header className="flex items-center gap-3"><span className={`grid size-10 place-items-center rounded-[14px] bg-gradient-to-br ${moment.tone} text-sm font-semibold text-white`}>{moment.avatar}</span><div><h3 className="text-sm font-medium">{moment.name}</h3><p className="mt-0.5 text-[10px] text-muted-foreground">{moment.time}</p></div></header>
     <p className="mt-4 text-sm leading-7">{moment.text}</p><div className={`mt-3 flex aspect-[16/7] items-end overflow-hidden rounded-2xl bg-gradient-to-br ${index === 0 ? 'from-[#bfd6dc] via-[#dad9df] to-[#e8bfa7]' : index === 1 ? 'from-[#d6d2d9] via-[#ece7e8] to-[#c8d8d7]' : 'from-[#d6c2d7] via-[#f0d8d4] to-[#cfb5c5]'} p-4`}><p className="max-w-xs rounded-xl bg-white/62 px-3 py-2 text-[11px] leading-5 text-[#62566b] backdrop-blur-sm">{moment.art}</p></div>
     <div className="mt-3 flex items-center justify-between text-[11px]"><span className="rounded-full bg-muted px-2.5 py-1 text-muted-foreground">{moment.tag}</span><button onClick={() => setLiked((current) => current.includes(index) ? current.filter((item) => item !== index) : [...current, index])} className={`transition ${liked.includes(index) ? 'text-[#c87882]' : 'text-muted-foreground hover:text-[#c87882]'}`}>♡ {liked.includes(index) ? '已喜欢' : '喜欢'}</button></div>
