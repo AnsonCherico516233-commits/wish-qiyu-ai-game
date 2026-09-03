@@ -375,10 +375,10 @@ export default function Home() {
   ];
 
   return (
-    <main className="min-h-dvh overflow-hidden p-0 text-foreground md:p-5">
+    <main className="smooth-scroll h-dvh overflow-x-hidden overflow-y-auto p-0 text-foreground md:p-5">
       <div className="tide-glow" aria-hidden="true" />
-      <section className="mx-auto grid h-dvh max-w-[1480px] grid-cols-1 overflow-hidden border-white/70 bg-card/88 shadow-[0_30px_90px_rgba(71,58,96,.14)] backdrop-blur-xl md:h-[calc(100dvh-40px)] md:grid-cols-[76px_300px_minmax(0,1fr)] md:rounded-[26px] md:border xl:grid-cols-[76px_300px_minmax(0,1fr)_292px]">
-        <nav className="hidden flex-col items-center border-r border-border/80 bg-sidebar/75 py-5 md:flex" aria-label="主导航">
+      <section className="mx-auto grid h-full min-h-0 max-w-[1480px] grid-cols-1 overflow-hidden border-white/70 bg-card/88 shadow-[0_30px_90px_rgba(71,58,96,.14)] backdrop-blur-xl md:h-[calc(100dvh-40px)] md:grid-cols-[76px_300px_minmax(0,1fr)] md:rounded-[26px] md:border xl:grid-cols-[76px_300px_minmax(0,1fr)_292px]">
+        <nav className="smooth-scroll hidden min-h-0 flex-col items-center overflow-y-auto border-r border-border/80 bg-sidebar/75 py-5 md:flex" aria-label="主导航">
           <button onClick={() => setView('chat')} className="mb-8 grid size-11 place-items-center rounded-2xl bg-primary text-primary-foreground shadow-[0_10px_28px_rgba(120,107,160,.28)]" aria-label="如你所愿首页"><Waves className="size-5" /></button>
           <div className="flex flex-1 flex-col gap-3">
             {navItems.map((item) => { const Icon = item.icon; return <Button key={item.id} size="icon-lg" variant={view === item.id ? 'default' : 'ghost'} className={`rounded-2xl ${view !== item.id ? 'text-muted-foreground' : ''}`} onClick={() => setView(item.id)} aria-label={item.label}><Icon /></Button>; })}
@@ -386,7 +386,7 @@ export default function Home() {
           <Button size="icon-lg" variant="ghost" className="rounded-2xl text-muted-foreground" onClick={() => setConfigOpen(true)} aria-label="模型设置"><Settings2 /></Button>
         </nav>
 
-        <aside className="hidden border-r border-border/80 bg-card/45 md:block">
+        <aside className="smooth-scroll hidden min-h-0 overflow-y-auto border-r border-border/80 bg-card/45 md:block">
           <div className="border-b border-border/70 px-5 pb-4 pt-6">
             <div className="mb-5 flex items-end justify-between">
               <div><p className="font-serif text-[11px] uppercase tracking-[.24em] text-muted-foreground">Love across tides</p><h1 className="mt-1 font-serif text-2xl">如你所愿</h1></div>
@@ -414,7 +414,7 @@ export default function Home() {
           )}
         </aside>
 
-        <section className="relative flex min-w-0 flex-col bg-[#faf8fc]/55">
+        <section className="relative flex min-h-0 min-w-0 flex-col overflow-hidden bg-[#faf8fc]/55">
           <header className="flex h-[68px] shrink-0 items-center justify-between border-b border-border/70 bg-card/66 px-4 backdrop-blur-md sm:px-6">
             <div className="flex min-w-0 items-center gap-3">
               {view === 'chat' ? <span className={`grid size-10 shrink-0 place-items-center rounded-[14px] bg-gradient-to-br ${active.tone} text-sm font-semibold text-white`}>{active.avatar}</span> : <span className="grid size-10 shrink-0 place-items-center rounded-[14px] bg-primary/10 text-primary">{view === 'story' ? <Sparkles className="size-4" /> : view === 'moments' ? <UsersRound className="size-4" /> : <MapPinned className="size-4" />}</span>}
@@ -487,7 +487,7 @@ function ChatView({ activeCharacter, active, messages, busy, endRef, scrollRef, 
   endRef: React.RefObject<HTMLDivElement | null>; scrollRef: React.RefObject<HTMLDivElement | null>;
   onScroll: () => void; onSwitch: (id: CharacterId) => void; onRetry: (messageId: string) => void;
 }) {
-  return <div ref={scrollRef} onScroll={onScroll} className="smooth-scroll min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-7 sm:py-6">
+  return <div ref={scrollRef} onScroll={onScroll} tabIndex={0} aria-label={`${active.name}的聊天记录`} className="smooth-scroll min-h-0 flex-1 overflow-y-scroll px-4 py-4 focus:outline-none sm:px-7 sm:py-6">
     <div className="mx-auto mb-4 flex max-w-3xl gap-2 md:hidden">
       {(Object.keys(contacts) as CharacterId[]).map((id) => <button key={id} onClick={() => onSwitch(id)} className={`flex flex-1 items-center justify-center gap-2 rounded-xl border px-3 py-2 text-xs ${activeCharacter === id ? 'border-primary/25 bg-primary/10 text-primary' : 'border-border bg-card'}`}><span className={`size-2 rounded-full ${id === 'qiyu' ? 'bg-[#75a692]' : 'bg-[#a289b4]'}`} />{contacts[id].name}</button>)}
     </div>
@@ -506,7 +506,7 @@ function ChatView({ activeCharacter, active, messages, busy, endRef, scrollRef, 
 }
 
 function StoryView({ story, loading, onChoice }: { story: StoryState; loading: boolean; onChoice: (choice: string) => void }) {
-  return <div className="smooth-scroll min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-7 sm:py-7">
+  return <div tabIndex={0} aria-label="剧情内容" className="smooth-scroll min-h-0 flex-1 overflow-y-scroll px-4 py-5 focus:outline-none sm:px-7 sm:py-7">
     <article className="mx-auto max-w-3xl">
       <div className="relative overflow-hidden rounded-[24px] bg-gradient-to-br from-[#7487a6] via-[#98b9c1] to-[#dfa991] p-6 text-white shadow-[0_18px_40px_rgba(103,110,145,.2)] sm:p-8">
         <div className="resonance-rings smaller" aria-hidden="true" /><p className="relative text-[10px] uppercase tracking-[.24em] text-white/70">Chapter {String(story.chapter).padStart(2, '0')} · Wish echo</p><h3 className="relative mt-8 font-serif text-2xl">{story.place}</h3><div className="relative mt-3 flex flex-wrap gap-2 text-[10px]"><span className="rounded-full bg-white/14 px-2.5 py-1 ring-1 ring-white/20">{story.phase}</span><span className="rounded-full bg-white/14 px-2.5 py-1 ring-1 ring-white/20">情绪 · {story.mood}</span><span className="rounded-full bg-white/14 px-2.5 py-1 ring-1 ring-white/20">回响 · {story.wish}%</span></div>
@@ -522,7 +522,7 @@ function StoryView({ story, loading, onChoice }: { story: StoryState; loading: b
 
 function MomentsView() {
   const [liked, setLiked] = useState<number[]>([]);
-  return <div className="smooth-scroll min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-7"><div className="mx-auto max-w-2xl space-y-4">{moments.map((moment, index) => <article key={moment.name + moment.time} className="rounded-[22px] border border-border/75 bg-card/88 p-5 shadow-[0_8px_30px_rgba(76,62,95,.06)]">
+  return <div tabIndex={0} aria-label="朋友圈内容" className="smooth-scroll min-h-0 flex-1 overflow-y-scroll px-4 py-5 focus:outline-none sm:px-7"><div className="mx-auto max-w-2xl space-y-4">{moments.map((moment, index) => <article key={moment.name + moment.time} className="rounded-[22px] border border-border/75 bg-card/88 p-5 shadow-[0_8px_30px_rgba(76,62,95,.06)]">
     <header className="flex items-center gap-3"><span className={`grid size-10 place-items-center rounded-[14px] bg-gradient-to-br ${moment.tone} text-sm font-semibold text-white`}>{moment.avatar}</span><div><h3 className="text-sm font-medium">{moment.name}</h3><p className="mt-0.5 text-[10px] text-muted-foreground">{moment.time}</p></div></header>
     <p className="mt-4 text-sm leading-7">{moment.text}</p><div className={`mt-3 flex aspect-[16/7] items-end overflow-hidden rounded-2xl bg-gradient-to-br ${index === 0 ? 'from-[#bfd6dc] via-[#dad9df] to-[#e8bfa7]' : index === 1 ? 'from-[#d6d2d9] via-[#ece7e8] to-[#c8d8d7]' : 'from-[#d6c2d7] via-[#f0d8d4] to-[#cfb5c5]'} p-4`}><p className="max-w-xs rounded-xl bg-white/62 px-3 py-2 text-[11px] leading-5 text-[#62566b] backdrop-blur-sm">{moment.art}</p></div>
     <div className="mt-3 flex items-center justify-between text-[11px]"><span className="rounded-full bg-muted px-2.5 py-1 text-muted-foreground">{moment.tag}</span><button onClick={() => setLiked((current) => current.includes(index) ? current.filter((item) => item !== index) : [...current, index])} className={`transition ${liked.includes(index) ? 'text-[#c87882]' : 'text-muted-foreground hover:text-[#c87882]'}`}>♡ {liked.includes(index) ? '已喜欢' : '喜欢'}</button></div>
@@ -531,14 +531,14 @@ function MomentsView() {
 }
 
 function MapView({ city, onVisit }: { city: string; onVisit: (place: string) => void }) {
-  return <div className="smooth-scroll min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-7 sm:py-7"><div className="mx-auto max-w-3xl">
+  return <div tabIndex={0} aria-label="邀约地图内容" className="smooth-scroll min-h-0 flex-1 overflow-y-scroll px-4 py-5 focus:outline-none sm:px-7 sm:py-7"><div className="mx-auto max-w-3xl">
     <div className="mb-5 rounded-[22px] border border-border/70 bg-card/82 p-5"><p className="font-serif text-xs uppercase tracking-[.18em] text-muted-foreground">Where the tide leads</p><h3 className="mt-2 font-serif text-2xl">{city || '你的城市'}</h3><p className="mt-2 text-xs leading-6 text-muted-foreground">世界线已经把祁煜嵌进这座城市。选一个地点，AI 会结合当前线索续写新的线下片段。</p></div>
     <div className="grid gap-3 sm:grid-cols-2">{locations.map((location) => <button key={location.name} onClick={() => onVisit(location.name)} className={`group relative min-h-44 overflow-hidden rounded-[22px] bg-gradient-to-br ${location.wash} p-5 text-left shadow-[0_8px_26px_rgba(82,70,104,.07)] ring-1 ring-border/60 transition hover:-translate-y-1 hover:shadow-[0_14px_34px_rgba(82,70,104,.12)]`}><span className="absolute -right-5 -top-7 font-serif text-[88px] font-light text-white/45">{location.icon}</span><span className="relative rounded-full bg-white/60 px-2.5 py-1 text-[10px] text-muted-foreground">{location.tag}</span><div className="relative mt-14"><h4 className="font-serif text-lg">{location.name}</h4><p className="mt-1 text-xs leading-5 text-muted-foreground">{location.desc}</p></div></button>)}</div>
   </div></div>;
 }
 
 function RightPanel({ story, profile, connected, protocol, onSettings }: { story: StoryState; profile: PlayerProfile; connected: boolean; protocol: ModelConfig['protocol']; onSettings: () => void }) {
-  return <aside className="hidden border-l border-border/80 bg-card/42 p-5 xl:block">
+  return <aside className="smooth-scroll hidden min-h-0 overflow-y-auto border-l border-border/80 bg-card/42 p-5 xl:block">
     <div className="mb-5 flex items-center justify-between"><p className="font-serif text-sm tracking-[.08em]">此刻 · {story.place}</p><span className="rounded-full bg-[#fff0e7] px-2.5 py-1 text-[10px] text-[#a36854]">第 {story.chapter} 章</span></div>
     <div className="relative overflow-hidden rounded-[22px] bg-gradient-to-br from-[#7688a8] via-[#9bbac2] to-[#dfa891] p-5 text-white shadow-[0_18px_34px_rgba(104,116,151,.20)]"><div className="resonance-rings smaller" aria-hidden="true" /><p className="relative text-[10px] uppercase tracking-[.22em] text-white/75">Wish resonance</p><p className="relative mt-8 font-serif text-xl leading-8">{story.paragraphs[0]?.slice(0, 42)}{(story.paragraphs[0]?.length || 0) > 42 ? '……' : ''}</p><div className="relative mt-6 flex items-center gap-2 text-[11px] text-white/80"><Waves className="size-4" />世界线轻微偏移</div></div>
     <div className="mt-5 space-y-3 rounded-[20px] border border-border/70 bg-card/75 p-4"><div className="flex items-center justify-between text-xs"><span className="text-muted-foreground">许愿回响</span><b className="text-primary">{story.wish}%</b></div><div className="h-1.5 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-gradient-to-r from-[#a19abb] to-[#dc9e88] transition-[width] duration-700" style={{ width: `${story.wish}%` }} /></div><div className="grid grid-cols-2 gap-2 pt-1 text-[11px]"><span className="rounded-xl bg-muted/60 p-2.5"><Flame className="mb-2 size-4 text-[#d6876f]" />情绪<b className="mt-1 block truncate text-foreground">{story.mood}</b></span><span className="rounded-xl bg-muted/60 p-2.5"><Sparkles className="mb-2 size-4 text-primary" />线索<b className="mt-1 block truncate text-foreground">{story.clue}</b></span></div></div>
