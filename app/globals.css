@@ -51,11 +51,28 @@
 
 @layer base {
   * { @apply border-border outline-ring/50; }
-  html { @apply font-sans; }
-  body { @apply bg-background text-foreground; background-image: radial-gradient(circle at 13% 12%, rgba(203,220,228,.78), transparent 30%), radial-gradient(circle at 88% 88%, rgba(235,192,174,.45), transparent 32%), linear-gradient(135deg, #f7f4f8 0%, #eee9f3 55%, #e8eff1 100%); }
+  html { @apply font-sans; scroll-behavior: smooth; }
+  body { @apply bg-background text-foreground; overscroll-behavior-y: none; background-image: radial-gradient(circle at 13% 12%, rgba(203,220,228,.78), transparent 30%), radial-gradient(circle at 88% 88%, rgba(235,192,174,.45), transparent 32%), linear-gradient(135deg, #f7f4f8 0%, #eee9f3 55%, #e8eff1 100%); }
   button { cursor: pointer; }
 }
 
 .tide-glow { position: fixed; inset: auto auto -18vw -10vw; width: 48vw; aspect-ratio: 1; border-radius: 999px; border: 1px solid rgba(255,255,255,.48); box-shadow: 0 0 0 45px rgba(255,255,255,.08), 0 0 0 90px rgba(255,255,255,.05); pointer-events: none; }
 ::selection { background: rgba(165,151,192,.28); }
 * { scrollbar-width: thin; scrollbar-color: rgba(132,115,158,.25) transparent; }
+
+.smooth-scroll {
+  scroll-behavior: smooth;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  scrollbar-gutter: stable;
+}
+
+.smooth-scroll::-webkit-scrollbar { width: 7px; }
+.smooth-scroll::-webkit-scrollbar-track { background: transparent; }
+.smooth-scroll::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 999px; background: rgba(132,115,158,.24); background-clip: padding-box; }
+.smooth-scroll::-webkit-scrollbar-thumb:hover { background: rgba(132,115,158,.42); background-clip: padding-box; }
+
+@media (prefers-reduced-motion: reduce) {
+  html, .smooth-scroll { scroll-behavior: auto; }
+}

@@ -90,13 +90,19 @@ function conversationPreview(messages: ChatMessage[]) {
   return messages.at(-1)?.content.replace(/\s+/g, ' ').slice(0, 42) || '还没有消息';
 }
 
+const MIN_STORY_CHARACTERS = 600;
+
+function storyCharacterCount(paragraphs: string[]) {
+  return paragraphs.join('').match(/[\u3400-\u9fff]/g)?.length || 0;
+}
+
 function parseStory(raw: string) {
   const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
   const start = cleaned.indexOf('{');
   const end = cleaned.lastIndexOf('}');
   if (start < 0 || end <= start) throw new Error('模型没有返回可解析的剧情结构');
   const data = JSON.parse(cleaned.slice(start, end + 1));
-  const paragraphs = Array.isArray(data.paragraphs) ? data.paragraphs.filter((item: unknown) => typeof item === 'string').slice(0, 6) : [];
+  const paragraphs = Array.isArray(data.paragraphs) ? data.paragraphs.filter((item: unknown) => typeof item === 'string').slice(0, 8) : [];
   const choices = Array.isArray(data.choices) ? data.choices.filter((item: unknown) => typeof item === 'string').slice(0, 4) : [];
   if (!paragraphs.length || choices.length < 2) throw new Error('剧情结构不完整');
   return {
@@ -123,9 +129,12 @@ export default function Home() {
   const [busy, setBusy] = useState(false);
   const [storyBusy, setStoryBusy] = useState(false);
   const [notice, setNotice] = useState('');
+  const [storyRetryChoice, setStoryRetryChoice] = useState('');
   const [testState, setTestState] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
   const abortRef = useRef<AbortController | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const chatScrollRef = useRef<HTMLDivElement | null>(null);
+  const stickToBottomRef = useRef(true);
 
   useEffect(() => {
     setConfig({ ...DEFAULT_CONFIG, ...storageRead<Partial<ModelConfig>>(STORAGE.config, {}) });
@@ -147,8 +156,10 @@ export default function Home() {
   }, [ready, config, profile, messages, story, apiKey]);
 
   useEffect(() => {
-    if (view === 'chat') messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-  }, [messages, activeCharacter, view]);
+    if (view !== 'chat' || !stickToBottomRef.current) return;
+    const frame = requestAnimationFrame(() => messagesEndRef.current?.scrollIntoView({ behavior: busy ? 'auto' : 'smooth', block: 'end' }));
+    return () => cancelAnimationFrame(frame);
+  }, [messages, activeCharacter, view, busy]);
 
   const active = contacts[activeCharacter];
   const activeMessages = messages[activeCharacter];
@@ -168,15 +179,28 @@ export default function Home() {
     return false;
   }
 
-  async function sendMessage(text = draft) {
+  async function sendMessage(text = draft, retryMessageId?: string) {
     const content = text.trim();
-    if (!content || busy || !requireConnection()) return;
-    const userMessage: ChatMessage = { id: crypto.randomUUID(), role: 'user', content, time: nowTime(), status: 'sent' };
-    const assistantId = crypto.randomUUID();
-    const pending: ChatMessage = { id: assistantId, role: 'assistant', content: '', time: nowTime(), status: 'sending' };
-    const history = [...activeMessages, userMessage].slice(-24);
-    setMessages((current) => ({ ...current, [activeCharacter]: [...current[activeCharacter], userMessage, pending] }));
-    setDraft('');
+    if ((!content && !retryMessageId) || busy || !requireConnection()) return;
+    const retryIndex = retryMessageId ? activeMessages.findIndex((message) => message.id === retryMessageId && message.role === 'assistant') : -1;
+    if (retryMessageId && retryIndex < 0) return;
+    const assistantId = retryMessageId || crypto.randomUUID();
+    let history: ChatMessage[];
+    if (retryMessageId) {
+      history = activeMessages.slice(0, retryIndex).slice(-24);
+      setMessages((current) => ({
+        ...current,
+        [activeCharacter]: current[activeCharacter].map((message) => message.id === assistantId ? { ...message, content: '', time: nowTime(), status: 'sending' } : message),
+      }));
+    } else {
+      const userMessage: ChatMessage = { id: crypto.randomUUID(), role: 'user', content, time: nowTime(), status: 'sent' };
+      const pending: ChatMessage = { id: assistantId, role: 'assistant', content: '', time: nowTime(), status: 'sending' };
+      history = [...activeMessages, userMessage].slice(-24);
+      setMessages((current) => ({ ...current, [activeCharacter]: [...current[activeCharacter], userMessage, pending] }));
+      setDraft('');
+    }
+    stickToBottomRef.current = true;
+    setStoryRetryChoice('');
     setNotice('');
     setBusy(true);
     const controller = new AbortController();
@@ -216,6 +240,7 @@ export default function Home() {
     if (storyBusy || !requireConnection()) return;
     setView('story');
     setStoryBusy(true);
+    setStoryRetryChoice('');
     setNotice('');
     let raw = '';
     const controller = new AbortController();
@@ -232,7 +257,24 @@ export default function Home() {
         (text) => { raw = text; },
         controller.signal,
       );
-      const next = parseStory(raw);
+      let next = parseStory(raw);
+      for (let repair = 0; storyCharacterCount(next.paragraphs) < MIN_STORY_CHARACTERS && repair < 2; repair += 1) {
+        let revisedRaw = '';
+        const currentLength = storyCharacterCount(next.paragraphs);
+        await streamModelReply(
+          config,
+          apiKey,
+          [
+            { role: 'system', content: buildStorySystem(profile, story) },
+            { role: 'user', content: `以下剧情草稿只有${currentLength}字，不符合不少于${MIN_STORY_CHARACTERS}字的要求。请保留事件逻辑与四个选择，完整重写为650至900字、6至8段的细腻剧情；不要总结、不要用重复句凑字数，只返回同样结构的合法 JSON。\n草稿：${JSON.stringify(next)}` },
+          ],
+          (text) => { revisedRaw = text; },
+          controller.signal,
+        );
+        next = parseStory(revisedRaw);
+      }
+      const finalLength = storyCharacterCount(next.paragraphs);
+      if (finalLength < MIN_STORY_CHARACTERS) throw new Error(`模型连续返回少于${MIN_STORY_CHARACTERS}字的剧情，请重新调取`);
       setStory((current) => ({
         ...current,
         ...next,
@@ -240,9 +282,13 @@ export default function Home() {
         wish: Math.min(100, current.wish + 2),
         history: [...current.history, `选择：${choice}\n${next.paragraphs.join('\n')}`].slice(-12),
       }));
+      setStoryRetryChoice('');
     } catch (error) {
       const detail = error instanceof Error ? error.message : '剧情生成失败';
-      if (!(error instanceof DOMException && error.name === 'AbortError')) setNotice(detail);
+      if (!(error instanceof DOMException && error.name === 'AbortError')) {
+        setNotice(`${detail}。可以重新调取本段剧情。`);
+        setStoryRetryChoice(choice);
+      }
     } finally {
       setStoryBusy(false);
       abortRef.current = null;
@@ -288,7 +334,7 @@ export default function Home() {
     if (!window.confirm('确认清除本设备上的剧情、聊天、玩家资料与模型设置吗？')) return;
     Object.values(STORAGE).forEach((key) => localStorage.removeItem(key));
     setProfile(emptyProfile); setConfig(DEFAULT_CONFIG); setApiKey(''); setMessages(INITIAL_MESSAGES); setStory(INITIAL_STORY);
-    setActiveCharacter('qiyu'); setView('chat'); setConfigOpen(false); setNotice('');
+    setActiveCharacter('qiyu'); setView('chat'); setConfigOpen(false); setNotice(''); setStoryRetryChoice('');
   }
 
   function submitProfile(event: FormEvent<HTMLFormElement>) {
@@ -303,6 +349,17 @@ export default function Home() {
       event.preventDefault();
       void sendMessage();
     }
+  }
+
+  function selectCharacter(id: CharacterId) {
+    stickToBottomRef.current = true;
+    setActiveCharacter(id);
+  }
+
+  function trackChatScroll() {
+    const pane = chatScrollRef.current;
+    if (!pane) return;
+    stickToBottomRef.current = pane.scrollHeight - pane.scrollTop - pane.clientHeight < 96;
   }
 
   const navItems: Array<{ id: AppView; label: string; icon: typeof Sparkles }> = [
@@ -335,7 +392,7 @@ export default function Home() {
               <p className="px-3 py-2 text-[11px] font-medium tracking-[.12em] text-muted-foreground">最近联系</p>
               {(Object.keys(contacts) as CharacterId[]).map((id) => {
                 const item = contacts[id];
-                return <button key={id} onClick={() => setActiveCharacter(id)} className={`mb-1 flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left transition ${activeCharacter === id ? 'bg-primary/10 shadow-[inset_0_0_0_1px_rgba(126,113,164,.08)]' : 'hover:bg-muted/60'}`}>
+                return <button key={id} onClick={() => selectCharacter(id)} className={`mb-1 flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left transition ${activeCharacter === id ? 'bg-primary/10 shadow-[inset_0_0_0_1px_rgba(126,113,164,.08)]' : 'hover:bg-muted/60'}`}>
                   <span className={`grid size-11 shrink-0 place-items-center rounded-[15px] bg-gradient-to-br ${item.tone} text-sm font-semibold text-white shadow-sm`}>{item.avatar}</span>
                   <span className="min-w-0 flex-1"><span className="flex items-center justify-between gap-2"><b className="text-sm font-medium">{item.name}</b><span className="text-[10px] text-muted-foreground">{messages[id].at(-1)?.time}</span></span><span className={`mt-1 block truncate text-xs ${id === 'xiaoyu' ? 'text-[#8b7092]' : 'text-muted-foreground'}`}>{conversationPreview(messages[id])}</span></span>
                 </button>;
@@ -345,7 +402,7 @@ export default function Home() {
           ) : (
             <div className="space-y-2 p-3">
               {navItems.filter((item) => item.id !== 'chat').map((item) => { const Icon = item.icon; return <button key={item.id} onClick={() => setView(item.id)} className={`flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left text-sm transition ${view === item.id ? 'bg-primary/10 text-primary' : 'hover:bg-muted/60'}`}><span className="grid size-9 place-items-center rounded-xl bg-card shadow-sm"><Icon className="size-4" /></span><span className="flex-1">{item.label}</span><ChevronRight className="size-4 opacity-45" /></button>; })}
-              <button onClick={() => { setView('chat'); setActiveCharacter('xiaoyu'); }} className="mt-5 flex w-full items-center gap-3 rounded-2xl bg-gradient-to-br from-[#eee8f4] to-[#e3edf1] px-4 py-4 text-left"><MoonStar className="size-5 text-[#7a7194]" /><span className="text-xs leading-5"><b className="block text-foreground">深夜频道</b><span className="text-muted-foreground">查看小鱼的未读信号</span></span></button>
+              <button onClick={() => { setView('chat'); selectCharacter('xiaoyu'); }} className="mt-5 flex w-full items-center gap-3 rounded-2xl bg-gradient-to-br from-[#eee8f4] to-[#e3edf1] px-4 py-4 text-left"><MoonStar className="size-5 text-[#7a7194]" /><span className="text-xs leading-5"><b className="block text-foreground">深夜频道</b><span className="text-muted-foreground">查看小鱼的未读信号</span></span></button>
             </div>
           )}
         </aside>
@@ -363,9 +420,9 @@ export default function Home() {
             </div>
           </header>
 
-          {notice && <div role="status" className="mx-4 mt-3 flex items-start gap-2 rounded-xl border border-[#e7cbc4] bg-[#fff4f0] px-3 py-2.5 text-xs leading-5 text-[#8c574d] sm:mx-6"><CircleAlert className="mt-0.5 size-4 shrink-0" /><span className="flex-1">{notice}</span><button onClick={() => setNotice('')} className="text-[#8c574d] underline underline-offset-2">关闭</button></div>}
+          {notice && <div role="status" className="mx-4 mt-3 flex items-start gap-2 rounded-xl border border-[#e7cbc4] bg-[#fff4f0] px-3 py-2.5 text-xs leading-5 text-[#8c574d] sm:mx-6"><CircleAlert className="mt-0.5 size-4 shrink-0" /><span className="flex-1">{notice}</span>{view === 'story' && storyRetryChoice && !storyBusy && <Button size="xs" variant="outline" className="border-[#d9aea4] bg-white/65 text-[#8c574d] hover:bg-white" onClick={() => void advanceStory(storyRetryChoice)}><RefreshCw />重新调取</Button>}<button onClick={() => setNotice('')} className="text-[#8c574d] underline underline-offset-2">关闭</button></div>}
 
-          {view === 'chat' && <ChatView activeCharacter={activeCharacter} active={active} messages={activeMessages} busy={busy} endRef={messagesEndRef} onSwitch={setActiveCharacter} />}
+          {view === 'chat' && <ChatView activeCharacter={activeCharacter} active={active} messages={activeMessages} busy={busy} endRef={messagesEndRef} scrollRef={chatScrollRef} onScroll={trackChatScroll} onSwitch={selectCharacter} onRetry={(messageId) => void sendMessage('', messageId)} />}
           {view === 'story' && <StoryView story={story} loading={storyBusy} onChoice={(choice) => void advanceStory(choice)} />}
           {view === 'moments' && <MomentsView />}
           {view === 'map' && <MapView city={profile.city} onVisit={(place) => void advanceStory(`前往${place}，触发一段与当前线索相连的线下剧情`)} />}
@@ -392,7 +449,7 @@ export default function Home() {
       <ModelSettings open={configOpen} onOpenChange={setConfigOpen} config={config} setConfig={setConfig} apiKey={apiKey} setApiKey={setApiKey} changeProtocol={changeProtocol} useDeepSeek={useDeepSeek} testState={testState} onTest={() => void testConnection()} onReset={resetGame} />
 
       <Dialog open={ready && !profile.completed}>
-        <DialogContent showCloseButton={false} className="max-h-[calc(100dvh-24px)] overflow-y-auto rounded-[26px] border border-white/80 bg-[#fbf8fc] p-0 shadow-[0_30px_100px_rgba(69,54,92,.24)] sm:max-w-[540px]">
+        <DialogContent showCloseButton={false} className="smooth-scroll max-h-[calc(100dvh-24px)] overflow-y-auto rounded-[26px] border border-white/80 bg-[#fbf8fc] p-0 shadow-[0_30px_100px_rgba(69,54,92,.24)] sm:max-w-[540px]">
           <div className="relative overflow-hidden rounded-t-[26px] bg-gradient-to-br from-[#7388a7] via-[#9ab9c2] to-[#d8a58f] px-7 py-8 text-white">
             <div className="resonance-rings" aria-hidden="true" />
             <div className="relative"><span className="grid size-11 place-items-center rounded-2xl bg-white/14 ring-1 ring-white/25"><WandSparkles className="size-5" /></span><p className="mt-8 font-serif text-xs uppercase tracking-[.28em] text-white/70">A wish finds its shore</p><h2 className="mt-2 font-serif text-3xl leading-tight">许愿让祁煜<br />来到你的身边</h2><p className="mt-3 max-w-sm text-xs leading-6 text-white/78">柳枝折断的那一刻，世界安静了一秒。告诉故事，该怎样称呼你。</p></div>
@@ -418,11 +475,12 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   return <label className="block"><span className="mb-1.5 block text-xs font-medium text-foreground">{label}</span>{children}</label>;
 }
 
-function ChatView({ activeCharacter, active, messages, busy, endRef, onSwitch }: {
+function ChatView({ activeCharacter, active, messages, busy, endRef, scrollRef, onScroll, onSwitch, onRetry }: {
   activeCharacter: CharacterId; active: typeof contacts.qiyu; messages: ChatMessage[]; busy: boolean;
-  endRef: React.RefObject<HTMLDivElement | null>; onSwitch: (id: CharacterId) => void;
+  endRef: React.RefObject<HTMLDivElement | null>; scrollRef: React.RefObject<HTMLDivElement | null>;
+  onScroll: () => void; onSwitch: (id: CharacterId) => void; onRetry: (messageId: string) => void;
 }) {
-  return <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-7 sm:py-6">
+  return <div ref={scrollRef} onScroll={onScroll} className="smooth-scroll min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-7 sm:py-6">
     <div className="mx-auto mb-4 flex max-w-3xl gap-2 md:hidden">
       {(Object.keys(contacts) as CharacterId[]).map((id) => <button key={id} onClick={() => onSwitch(id)} className={`flex flex-1 items-center justify-center gap-2 rounded-xl border px-3 py-2 text-xs ${activeCharacter === id ? 'border-primary/25 bg-primary/10 text-primary' : 'border-border bg-card'}`}><span className={`size-2 rounded-full ${id === 'qiyu' ? 'bg-[#75a692]' : 'bg-[#a289b4]'}`} />{contacts[id].name}</button>)}
     </div>
@@ -432,7 +490,7 @@ function ChatView({ activeCharacter, active, messages, busy, endRef, onSwitch }:
         <div className={`whitespace-pre-wrap rounded-[18px] px-4 py-3 text-[14px] leading-7 ${message.role === 'user' ? 'rounded-tr-[5px] bg-[#dacbdc] text-[#473d53]' : `rounded-tl-[5px] bg-card shadow-[0_8px_24px_rgba(91,77,116,.08)] ring-1 ${message.status === 'error' ? 'ring-[#dcaaa0]' : 'ring-border/60'} ${activeCharacter === 'xiaoyu' ? 'glitch-text' : ''}`}`}>
           {message.content || <span className="inline-flex items-center gap-2 text-muted-foreground"><LoaderCircle className="size-3.5 animate-spin" />正在输入</span>}
         </div>
-        <p className={`mt-1.5 text-[10px] text-muted-foreground ${message.role === 'user' ? 'pr-1 text-right' : 'pl-1'}`}>{message.role === 'assistant' ? active.name : '你'} · {message.time}{message.status === 'sending' && message.content ? ' · 生成中' : ''}{message.status === 'error' ? ' · 发送失败' : ''}</p>
+        <div className={`mt-1.5 flex items-center gap-1.5 text-[10px] text-muted-foreground ${message.role === 'user' ? 'justify-end pr-1' : 'pl-1'}`}><span>{message.role === 'assistant' ? active.name : '你'} · {message.time}{message.status === 'sending' && message.content ? ' · 生成中' : ''}{message.status === 'error' ? ' · 调取失败' : ''}</span>{message.role === 'assistant' && message.status === 'error' && <Button size="xs" variant="ghost" className="h-6 rounded-lg px-2 text-[10px] text-[#9a6258] hover:bg-[#fff0ec]" onClick={() => onRetry(message.id)} disabled={busy}><RefreshCw className="size-3" />重新生成</Button>}</div>
       </div>)}
       {busy && !messages.at(-1)?.content && <span className="sr-only" aria-live="polite">{active.name}正在输入</span>}
       <div ref={endRef} />
@@ -441,7 +499,7 @@ function ChatView({ activeCharacter, active, messages, busy, endRef, onSwitch }:
 }
 
 function StoryView({ story, loading, onChoice }: { story: StoryState; loading: boolean; onChoice: (choice: string) => void }) {
-  return <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-7 sm:py-7">
+  return <div className="smooth-scroll min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-7 sm:py-7">
     <article className="mx-auto max-w-3xl">
       <div className="relative overflow-hidden rounded-[24px] bg-gradient-to-br from-[#7487a6] via-[#98b9c1] to-[#dfa991] p-6 text-white shadow-[0_18px_40px_rgba(103,110,145,.2)] sm:p-8">
         <div className="resonance-rings smaller" aria-hidden="true" /><p className="relative text-[10px] uppercase tracking-[.24em] text-white/70">Chapter {String(story.chapter).padStart(2, '0')} · Wish echo</p><h3 className="relative mt-8 font-serif text-2xl">{story.place}</h3><div className="relative mt-3 flex flex-wrap gap-2 text-[10px]"><span className="rounded-full bg-white/14 px-2.5 py-1 ring-1 ring-white/20">{story.phase}</span><span className="rounded-full bg-white/14 px-2.5 py-1 ring-1 ring-white/20">情绪 · {story.mood}</span><span className="rounded-full bg-white/14 px-2.5 py-1 ring-1 ring-white/20">回响 · {story.wish}%</span></div>
@@ -457,7 +515,7 @@ function StoryView({ story, loading, onChoice }: { story: StoryState; loading: b
 
 function MomentsView() {
   const [liked, setLiked] = useState<number[]>([]);
-  return <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-7"><div className="mx-auto max-w-2xl space-y-4">{moments.map((moment, index) => <article key={moment.name + moment.time} className="rounded-[22px] border border-border/75 bg-card/88 p-5 shadow-[0_8px_30px_rgba(76,62,95,.06)]">
+  return <div className="smooth-scroll min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-7"><div className="mx-auto max-w-2xl space-y-4">{moments.map((moment, index) => <article key={moment.name + moment.time} className="rounded-[22px] border border-border/75 bg-card/88 p-5 shadow-[0_8px_30px_rgba(76,62,95,.06)]">
     <header className="flex items-center gap-3"><span className={`grid size-10 place-items-center rounded-[14px] bg-gradient-to-br ${moment.tone} text-sm font-semibold text-white`}>{moment.avatar}</span><div><h3 className="text-sm font-medium">{moment.name}</h3><p className="mt-0.5 text-[10px] text-muted-foreground">{moment.time}</p></div></header>
     <p className="mt-4 text-sm leading-7">{moment.text}</p><div className={`mt-3 flex aspect-[16/7] items-end overflow-hidden rounded-2xl bg-gradient-to-br ${index === 0 ? 'from-[#bfd6dc] via-[#dad9df] to-[#e8bfa7]' : index === 1 ? 'from-[#d6d2d9] via-[#ece7e8] to-[#c8d8d7]' : 'from-[#d6c2d7] via-[#f0d8d4] to-[#cfb5c5]'} p-4`}><p className="max-w-xs rounded-xl bg-white/62 px-3 py-2 text-[11px] leading-5 text-[#62566b] backdrop-blur-sm">{moment.art}</p></div>
     <div className="mt-3 flex items-center justify-between text-[11px]"><span className="rounded-full bg-muted px-2.5 py-1 text-muted-foreground">{moment.tag}</span><button onClick={() => setLiked((current) => current.includes(index) ? current.filter((item) => item !== index) : [...current, index])} className={`transition ${liked.includes(index) ? 'text-[#c87882]' : 'text-muted-foreground hover:text-[#c87882]'}`}>♡ {liked.includes(index) ? '已喜欢' : '喜欢'}</button></div>
@@ -466,7 +524,7 @@ function MomentsView() {
 }
 
 function MapView({ city, onVisit }: { city: string; onVisit: (place: string) => void }) {
-  return <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-7 sm:py-7"><div className="mx-auto max-w-3xl">
+  return <div className="smooth-scroll min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-7 sm:py-7"><div className="mx-auto max-w-3xl">
     <div className="mb-5 rounded-[22px] border border-border/70 bg-card/82 p-5"><p className="font-serif text-xs uppercase tracking-[.18em] text-muted-foreground">Where the tide leads</p><h3 className="mt-2 font-serif text-2xl">{city || '你的城市'}</h3><p className="mt-2 text-xs leading-6 text-muted-foreground">世界线已经把祁煜嵌进这座城市。选一个地点，AI 会结合当前线索续写新的线下片段。</p></div>
     <div className="grid gap-3 sm:grid-cols-2">{locations.map((location) => <button key={location.name} onClick={() => onVisit(location.name)} className={`group relative min-h-44 overflow-hidden rounded-[22px] bg-gradient-to-br ${location.wash} p-5 text-left shadow-[0_8px_26px_rgba(82,70,104,.07)] ring-1 ring-border/60 transition hover:-translate-y-1 hover:shadow-[0_14px_34px_rgba(82,70,104,.12)]`}><span className="absolute -right-5 -top-7 font-serif text-[88px] font-light text-white/45">{location.icon}</span><span className="relative rounded-full bg-white/60 px-2.5 py-1 text-[10px] text-muted-foreground">{location.tag}</span><div className="relative mt-14"><h4 className="font-serif text-lg">{location.name}</h4><p className="mt-1 text-xs leading-5 text-muted-foreground">{location.desc}</p></div></button>)}</div>
   </div></div>;
@@ -489,7 +547,7 @@ function ModelSettings({ open, onOpenChange, config, setConfig, apiKey, setApiKe
   testState: 'idle' | 'testing' | 'success' | 'error'; onTest: () => void; onReset: () => void;
 }) {
   const isDeepSeek = config.protocol === 'openai' && /^https:\/\/api\.deepseek\.com\/?$/i.test(config.baseUrl.trim());
-  return <Sheet open={open} onOpenChange={onOpenChange}><SheetContent className="w-[min(440px,94vw)] overflow-y-auto border-l border-border bg-[#fbf9fc] p-0 sm:max-w-[440px]">
+  return <Sheet open={open} onOpenChange={onOpenChange}><SheetContent className="smooth-scroll w-[min(440px,94vw)] overflow-y-auto border-l border-border bg-[#fbf9fc] p-0 sm:max-w-[440px]">
     <SheetHeader className="border-b border-border/70 px-6 py-5"><div className="flex items-center gap-3"><span className="grid size-10 place-items-center rounded-2xl bg-primary/10 text-primary"><KeyRound className="size-4" /></span><div><SheetTitle>连接 AI 模型</SheetTitle><SheetDescription className="mt-1 text-xs">由每位玩家填写自己的模型服务</SheetDescription></div></div></SheetHeader>
     <div className="space-y-6 px-6 pb-8 pt-5">
       <section><p className="mb-3 text-[11px] font-medium uppercase tracking-[.14em] text-muted-foreground">模型服务</p><div className="grid grid-cols-2 gap-2"><button onClick={() => changeProtocol('openai')} className={`rounded-xl border px-2 py-2.5 text-xs transition ${config.protocol === 'openai' && !isDeepSeek ? 'border-primary/30 bg-primary/10 text-primary' : 'border-border bg-card hover:border-primary/20'}`}>OpenAI 兼容</button><button onClick={useDeepSeek} className={`rounded-xl border px-2 py-2.5 text-xs transition ${isDeepSeek ? 'border-primary/30 bg-primary/10 text-primary' : 'border-border bg-card hover:border-primary/20'}`}>DeepSeek</button><button onClick={() => changeProtocol('anthropic')} className={`rounded-xl border px-2 py-2.5 text-xs transition ${config.protocol === 'anthropic' ? 'border-primary/30 bg-primary/10 text-primary' : 'border-border bg-card hover:border-primary/20'}`}>Claude</button><button onClick={() => changeProtocol('gemini')} className={`rounded-xl border px-2 py-2.5 text-xs transition ${config.protocol === 'gemini' ? 'border-primary/30 bg-primary/10 text-primary' : 'border-border bg-card hover:border-primary/20'}`}>Gemini</button></div><p className="mt-2 text-[11px] leading-5 text-muted-foreground">DeepSeek 会一键填入官方 Base URL、Chat Completions 路径和 deepseek-v4-flash；仍可手动换成 Pro 或中转站模型名。</p></section>
