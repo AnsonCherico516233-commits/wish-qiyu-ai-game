@@ -1,15 +1,12 @@
 export type Protocol = 'openai' | 'anthropic' | 'gemini';
-export type Transport = 'relay' | 'direct';
 export type CharacterId = 'qiyu' | 'xiaoyu';
 export type AppView = 'chat' | 'story' | 'moments' | 'map';
 
 export interface ModelConfig {
   protocol: Protocol;
-  transport: Transport;
   model: string;
   baseUrl: string;
   apiPath: string;
-  relayUrl: string;
   rememberKey: boolean;
 }
 
@@ -43,11 +40,9 @@ export interface StoryState {
 
 export const DEFAULT_CONFIG: ModelConfig = {
   protocol: 'openai',
-  transport: 'relay',
   model: '',
   baseUrl: 'https://api.openai.com/v1',
   apiPath: '/chat/completions',
-  relayUrl: 'https://wish-qiyu-ai-game.ansoncherico516233.chatgpt.site/api/chat',
   rememberKey: false,
 };
 
@@ -182,14 +177,18 @@ export async function streamModelReply(
   if (!config.baseUrl.trim() || !config.apiPath.trim()) throw new Error('请填写 API Base URL 与 API 路径');
 
   const body = requestBody(config, messages);
-  const response = config.transport === 'relay'
-    ? await fetch(config.relayUrl?.trim() || DEFAULT_CONFIG.relayUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-User-API-Key': apiKey },
-        body: JSON.stringify({ protocol: config.protocol, baseUrl: config.baseUrl, apiPath: config.apiPath, body }),
-        signal,
-      })
-    : await fetch(endpointFor(config), { method: 'POST', headers: directHeaders(config.protocol, apiKey), body: JSON.stringify(body), signal });
+  let response: Response;
+  try {
+    response = await fetch(endpointFor(config), {
+      method: 'POST',
+      headers: directHeaders(config.protocol, apiKey),
+      body: JSON.stringify(body),
+      signal,
+    });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') throw error;
+    throw new Error('浏览器无法直连该模型服务。请确认使用官方 HTTPS 地址，且服务商允许当前页面跨域访问');
+  }
 
   if (!response.ok) {
     const raw = await response.text();
