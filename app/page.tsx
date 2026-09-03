@@ -1,26 +1,25 @@
 'use client';
 
-import { FormEvent, KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { KeyboardEvent, SyntheticEvent, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ArrowLeft,
   BookOpenText,
   Bookmark,
   Check,
   ChevronRight,
   CircleAlert,
-  Compass,
   Ellipsis,
   Flame,
+  History,
   KeyRound,
   LoaderCircle,
   LockKeyhole,
-  MapPin,
   MapPinned,
   MessageCircleMore,
   MoonStar,
   Paperclip,
   Phone,
   RefreshCw,
+  RotateCcw,
   Search,
   Send,
   Settings2,
@@ -33,6 +32,17 @@ import {
   Waves,
   Wifi,
 } from 'lucide-react';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogMedia,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -42,6 +52,8 @@ import { Textarea } from '@/components/ui/textarea';
 import {
   AppView,
   buildCharacterSystem,
+  buildMomentsSystem,
+  buildStoryContinuationSystem,
   buildStorySystem,
   CharacterId,
   ChatMessage,
@@ -120,6 +132,15 @@ function conversationPreview(messages: ChatMessage[]) {
   return messages.at(-1)?.content.replace(/\s+/g, ' ').slice(0, 42) || '还没有消息';
 }
 
+function markMessageFailed(character: CharacterId, messageId: string, fallbackContent: string, status: ChatMessage['status']) {
+  return (current: Record<CharacterId, ChatMessage[]>): Record<CharacterId, ChatMessage[]> => ({
+    ...current,
+    [character]: current[character].map((message) => message.id === messageId
+      ? { ...message, content: message.content || fallbackContent, status }
+      : message),
+  });
+}
+
 const MIN_STORY_CHARACTERS = 600;
 const MAP_UNLOCK_WISH = 30;
 
@@ -173,20 +194,23 @@ export default function Home() {
   const momentsBusyRef = useRef(false);
 
   useEffect(() => {
-    const storedConfig = storageRead<Partial<ModelConfig>>(STORAGE.config, {});
-    setConfig({
-      ...DEFAULT_CONFIG,
-      protocol: storedConfig.protocol || DEFAULT_CONFIG.protocol,
-      model: storedConfig.model || DEFAULT_CONFIG.model,
-      baseUrl: storedConfig.baseUrl || DEFAULT_CONFIG.baseUrl,
-      apiPath: storedConfig.apiPath || DEFAULT_CONFIG.apiPath,
-      rememberKey: Boolean(storedConfig.rememberKey),
+    const frame = requestAnimationFrame(() => {
+      const storedConfig = storageRead<Partial<ModelConfig>>(STORAGE.config, {});
+      setConfig({
+        ...DEFAULT_CONFIG,
+        protocol: storedConfig.protocol || DEFAULT_CONFIG.protocol,
+        model: storedConfig.model || DEFAULT_CONFIG.model,
+        baseUrl: storedConfig.baseUrl || DEFAULT_CONFIG.baseUrl,
+        apiPath: storedConfig.apiPath || DEFAULT_CONFIG.apiPath,
+        rememberKey: Boolean(storedConfig.rememberKey),
+      });
+      setProfile(storageRead(STORAGE.profile, emptyProfile));
+      setMessages(storageRead(STORAGE.messages, INITIAL_MESSAGES));
+      setStory(storageRead(STORAGE.story, INITIAL_STORY));
+      setApiKey(localStorage.getItem(STORAGE.key) || '');
+      setReady(true);
     });
-    setProfile(storageRead(STORAGE.profile, emptyProfile));
-    setMessages(storageRead(STORAGE.messages, INITIAL_MESSAGES));
-    setStory(storageRead(STORAGE.story, INITIAL_STORY));
-    setApiKey(localStorage.getItem(STORAGE.key) || '');
-    setReady(true);
+    return () => cancelAnimationFrame(frame);
   }, []);
 
   useEffect(() => {
@@ -213,6 +237,7 @@ export default function Home() {
     if (view === 'story') return { title: `第 ${story.chapter} 章 · ${story.place}`, subtitle: `${story.phase} · 世界线仍在轻轻偏移` };
     if (view === 'moments') return { title: '朋友圈', subtitle: momentsBusy ? '潮声正在带来新的动态…' : '每次进入，世界线都会刷新一次' };
     if (view === 'map') return { title: '邀约地图', subtitle: `${profile.city || '你的城市'} · 选择一个要去的地方` };
+    if (view === 'rewind') return { title: '剧情回溯', subtitle: '把愿望带回最初响起门铃的清晨' };
     return { title: active.name, subtitle: active.subtitle };
   }, [view, story, profile.city, active, momentsBusy]);
 
@@ -269,10 +294,9 @@ export default function Home() {
     } catch (error) {
       const aborted = error instanceof DOMException && error.name === 'AbortError';
       const detail = aborted ? '已停止生成' : error instanceof Error ? error.message : '生成失败，请检查模型设置';
-      setMessages((current) => ({
-        ...current,
-        [activeCharacter]: current[activeCharacter].map((message) => message.id === assistantId ? { ...message, content: message.content || `连接中断：${detail}`, status: aborted ? 'sent' : 'error' } : message),
-      }));
+      const failedContent = `连接中断：${detail}`;
+      const failedStatus: ChatMessage['status'] = aborted ? 'sent' : 'error';
+      setMessages(markMessageFailed(activeCharacter, assistantId, failedContent, failedStatus));
       if (!aborted) setNotice(detail);
     } finally {
       setBusy(false);
@@ -310,7 +334,7 @@ export default function Home() {
           config,
           apiKey,
           [
-            { role: 'system', content: '你是中文互动小说续写者。始终用第二人称“你”，保持七分白描三分抒情，只续写新的情节，不总结、不重复。只输出2至3段连续正文，不要JSON、标题、选项或解释。' },
+            { role: 'system', content: buildStoryContinuationSystem(profile, story) },
             { role: 'user', content: `下面的剧情已有${currentLength}字。请从结尾无缝续写至少${requestedLength}个汉字，使事件自然推进，并保留祁煜的人设与当前氛围。\n剧情结尾：${next.paragraphs.join('\n').slice(-1200)}` },
           ],
           (text) => { continuationRaw = text; },
@@ -384,7 +408,7 @@ export default function Home() {
       await streamModelReply(config, apiKey, [
         {
           role: 'system',
-          content: `你为“如你所愿”文字游戏生成朋友圈。结合当前剧情创作3条刚刚发生的新动态，发布者从祁煜、唐知理、谭灵、小鱼中选择，内容彼此有关联但不剧透。涉及玩家时始终用第二人称“你”，绝不使用玩家姓名或“她/他”代称。文风七分白描三分抒情，可有成年人之间含蓄、明确自愿的暧昧张力，但不写露骨性行为。只返回合法JSON：{"moments":[{"name":"发布者","time":"刚刚或几分钟前","text":"动态正文","art":"配图的文字描述","tag":"短标签","comment":"一条角色评论"}]}。必须正好3条。`,
+          content: buildMomentsSystem(profile, story),
         },
         {
           role: 'user',
@@ -421,7 +445,21 @@ export default function Home() {
     setActiveCharacter('qiyu'); setView('chat'); setMomentFeed(fallbackMoments()); setConfigOpen(false); setNotice(''); setStoryRetryChoice('');
   }
 
-  function submitProfile(event: FormEvent<HTMLFormElement>) {
+  function resetStory() {
+    if (storyBusy) abortRef.current?.abort();
+    setStory({
+      ...INITIAL_STORY,
+      paragraphs: [...INITIAL_STORY.paragraphs],
+      choices: [...INITIAL_STORY.choices],
+      history: [],
+    });
+    setStoryBusy(false);
+    setStoryRetryChoice('');
+    setNotice('剧情已回到最初的清晨；私信、玩家资料与模型连接均已保留。');
+    setView('story');
+  }
+
+  function submitProfile(event: SyntheticEvent<HTMLFormElement, SubmitEvent>) {
     event.preventDefault();
     if (!profile.name.trim()) return;
     setProfile((current) => ({ ...current, completed: true }));
@@ -459,6 +497,7 @@ export default function Home() {
   const navItems: Array<{ id: AppView; label: string; icon: typeof Sparkles }> = [
     { id: 'chat', label: '私信', icon: MessageCircleMore }, { id: 'story', label: '剧情', icon: BookOpenText },
     { id: 'moments', label: '朋友圈', icon: UsersRound }, { id: 'map', label: '邀约', icon: MapPinned },
+    { id: 'rewind', label: '回溯', icon: History },
   ];
 
   return (
@@ -479,7 +518,7 @@ export default function Home() {
               <div><p className="font-serif text-[11px] uppercase tracking-[.24em] text-muted-foreground">Love across tides</p><h1 className="mt-1 font-serif text-2xl">如你所愿</h1></div>
               <span className={`mb-1 inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] ${connected ? 'bg-[#eaf3f4] text-[#537985]' : 'bg-[#f4eceb] text-[#9a6f67]'}`}><span className={`size-1.5 rounded-full ${connected ? 'bg-[#73a492]' : 'bg-[#c5897e]'}`} />{connected ? 'AI 已连接' : '尚未连接'}</span>
             </div>
-            {view === 'chat' ? <label className="relative block"><Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" /><Input className="h-10 rounded-xl border-transparent bg-muted/70 pl-9 shadow-none" placeholder="搜索私信" aria-label="搜索私信" /></label> : <p className="rounded-xl bg-muted/55 px-3 py-2.5 text-xs leading-5 text-muted-foreground">一场愿望正在改变你熟悉的世界。每一次选择都会留下回声。</p>}
+            {view === 'chat' ? <div className="relative"><Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" /><Input className="h-10 rounded-xl border-transparent bg-muted/70 pl-9 shadow-none" placeholder="搜索私信" aria-label="搜索私信" /></div> : <p className="rounded-xl bg-muted/55 px-3 py-2.5 text-xs leading-5 text-muted-foreground">一场愿望正在改变你熟悉的世界。每一次选择都会留下回声。</p>}
           </div>
           {view === 'chat' ? (
             <div className="p-2.5">
@@ -504,7 +543,7 @@ export default function Home() {
         <section className="relative flex min-h-0 min-w-0 flex-col overflow-hidden bg-[#faf8fc]/55">
           <header className="flex h-[68px] shrink-0 items-center justify-between border-b border-border/70 bg-card/66 px-4 backdrop-blur-md sm:px-6">
             <div className="flex min-w-0 items-center gap-3">
-              {view === 'chat' ? <span className={`grid size-10 shrink-0 place-items-center rounded-[14px] bg-gradient-to-br ${active.tone} text-sm font-semibold text-white`}>{active.avatar}</span> : <span className="grid size-10 shrink-0 place-items-center rounded-[14px] bg-primary/10 text-primary">{view === 'story' ? <BookOpenText className="size-4" /> : view === 'moments' ? <UsersRound className="size-4" /> : <MapPinned className="size-4" />}</span>}
+              {view === 'chat' ? <span className={`grid size-10 shrink-0 place-items-center rounded-[14px] bg-gradient-to-br ${active.tone} text-sm font-semibold text-white`}>{active.avatar}</span> : <span className="grid size-10 shrink-0 place-items-center rounded-[14px] bg-primary/10 text-primary">{view === 'story' ? <BookOpenText className="size-4" /> : view === 'moments' ? <UsersRound className="size-4" /> : view === 'map' ? <MapPinned className="size-4" /> : <History className="size-4" />}</span>}
               <div className="min-w-0"><h2 className="truncate text-[15px] font-semibold">{header.title}</h2><p className="mt-0.5 truncate text-[11px] text-muted-foreground">{header.subtitle}</p></div>
             </div>
             <div className="flex gap-1">
@@ -514,12 +553,13 @@ export default function Home() {
             </div>
           </header>
 
-          {notice && <div role="status" className="mx-4 mt-3 flex items-start gap-2 rounded-xl border border-[#e7cbc4] bg-[#fff4f0] px-3 py-2.5 text-xs leading-5 text-[#8c574d] sm:mx-6"><CircleAlert className="mt-0.5 size-4 shrink-0" /><span className="flex-1">{notice}</span>{view === 'story' && storyRetryChoice && !storyBusy && <Button size="xs" variant="outline" className="border-[#d9aea4] bg-white/65 text-[#8c574d] hover:bg-white" onClick={() => void advanceStory(storyRetryChoice)}><RefreshCw />重新调取</Button>}<button onClick={() => setNotice('')} className="text-[#8c574d] underline underline-offset-2">关闭</button></div>}
+          {notice && <div aria-live="polite" className="mx-4 mt-3 flex items-start gap-2 rounded-xl border border-[#e7cbc4] bg-[#fff4f0] px-3 py-2.5 text-xs leading-5 text-[#8c574d] sm:mx-6"><CircleAlert className="mt-0.5 size-4 shrink-0" /><span className="flex-1">{notice}</span>{view === 'story' && storyRetryChoice && !storyBusy && <Button size="xs" variant="outline" className="border-[#d9aea4] bg-white/65 text-[#8c574d] hover:bg-white" onClick={() => void advanceStory(storyRetryChoice)}><RefreshCw />重新调取</Button>}<button onClick={() => setNotice('')} className="text-[#8c574d] underline underline-offset-2">关闭</button></div>}
 
           {view === 'chat' && <ChatView activeCharacter={activeCharacter} active={active} messages={activeMessages} busy={busy} endRef={messagesEndRef} scrollRef={chatScrollRef} onScroll={trackChatScroll} onSwitch={selectCharacter} onRetry={(messageId) => void sendMessage('', messageId)} />}
           {view === 'story' && <StoryView story={story} loading={storyBusy} onChoice={(choice) => void advanceStory(choice)} />}
           {view === 'moments' && <MomentsView moments={momentFeed} loading={momentsBusy} />}
           {view === 'map' && <MapView city={profile.city} onVisit={(place) => void advanceStory(`你接受祁煜的邀约并前往「${place}」。下一段必须完整发生在「${place}」，围绕约会中的互动、环境细节与当前线索展开；始终用第二人称“你”叙述。`)} />}
+          {view === 'rewind' && <RewindView story={story} resetting={storyBusy} onReset={resetStory} />}
 
           {view === 'chat' && (
             <footer className="shrink-0 border-t border-border/70 bg-card/72 p-3 backdrop-blur-md sm:p-4">
@@ -532,7 +572,7 @@ export default function Home() {
             </footer>
           )}
 
-          <nav className="grid h-[60px] shrink-0 grid-cols-4 border-t border-border/75 bg-card/90 px-2 pb-[env(safe-area-inset-bottom)] md:hidden" aria-label="移动端主导航">
+          <nav className="grid h-[60px] shrink-0 grid-cols-5 border-t border-border/75 bg-card/90 px-1 pb-[env(safe-area-inset-bottom)] md:hidden" aria-label="移动端主导航">
             {navItems.map((item) => { const Icon = item.icon; const locked = item.id === 'map' && story.wish < MAP_UNLOCK_WISH; return <button key={item.id} onClick={() => openView(item.id)} className={`flex flex-col items-center justify-center gap-1 text-[10px] ${view === item.id ? 'text-primary' : 'text-muted-foreground'} ${locked ? 'opacity-55' : ''}`} aria-label={locked ? `${item.label}，许愿值${MAP_UNLOCK_WISH}%解锁` : item.label}>{locked ? <LockKeyhole className="size-4" /> : <Icon className="size-4" />}<span>{item.label}</span></button>; })}
           </nav>
         </section>
@@ -574,7 +614,7 @@ function ChatView({ activeCharacter, active, messages, busy, endRef, scrollRef, 
   endRef: React.RefObject<HTMLDivElement | null>; scrollRef: React.RefObject<HTMLDivElement | null>;
   onScroll: () => void; onSwitch: (id: CharacterId) => void; onRetry: (messageId: string) => void;
 }) {
-  return <div ref={scrollRef} onScroll={onScroll} tabIndex={0} aria-label={`${active.name}的聊天记录`} className="smooth-scroll min-h-0 flex-1 overflow-y-scroll px-4 py-4 focus:outline-none sm:px-7 sm:py-6">
+  return <div ref={scrollRef} onScroll={onScroll} aria-label={`${active.name}的聊天记录`} className="smooth-scroll min-h-0 flex-1 overflow-y-scroll px-4 py-4 sm:px-7 sm:py-6">
     <div className="mx-auto mb-4 flex max-w-3xl gap-2 md:hidden">
       {(Object.keys(contacts) as CharacterId[]).map((id) => <button key={id} onClick={() => onSwitch(id)} className={`flex flex-1 items-center justify-center gap-2 rounded-xl border px-3 py-2 text-xs ${activeCharacter === id ? 'border-primary/25 bg-primary/10 text-primary' : 'border-border bg-card'}`}><span className={`size-2 rounded-full ${id === 'qiyu' ? 'bg-[#75a692]' : 'bg-[#a289b4]'}`} />{contacts[id].name}</button>)}
     </div>
@@ -593,7 +633,7 @@ function ChatView({ activeCharacter, active, messages, busy, endRef, scrollRef, 
 }
 
 function StoryView({ story, loading, onChoice }: { story: StoryState; loading: boolean; onChoice: (choice: string) => void }) {
-  return <div tabIndex={0} aria-label="剧情内容" className="smooth-scroll min-h-0 flex-1 overflow-y-scroll px-4 py-5 focus:outline-none sm:px-7 sm:py-7">
+  return <div aria-label="剧情内容" className="smooth-scroll min-h-0 flex-1 overflow-y-scroll px-4 py-5 sm:px-7 sm:py-7">
     <article className="mx-auto max-w-3xl">
       <div className="relative overflow-hidden rounded-[24px] bg-gradient-to-br from-[#7487a6] via-[#98b9c1] to-[#dfa991] p-6 text-white shadow-[0_18px_40px_rgba(103,110,145,.2)] sm:p-8">
         <div className="resonance-rings smaller" aria-hidden="true" /><p className="relative text-[10px] uppercase tracking-[.24em] text-white/70">Chapter {String(story.chapter).padStart(2, '0')} · Wish echo</p><h3 className="relative mt-8 font-serif text-2xl">{story.place}</h3><div className="relative mt-3 flex flex-wrap gap-2 text-[10px]"><span className="rounded-full bg-white/14 px-2.5 py-1 ring-1 ring-white/20">{story.phase}</span><span className="rounded-full bg-white/14 px-2.5 py-1 ring-1 ring-white/20">情绪 · {story.mood}</span><span className="rounded-full bg-white/14 px-2.5 py-1 ring-1 ring-white/20">回响 · {story.wish}%</span></div>
@@ -614,7 +654,7 @@ function StoryParagraph({ text }: { text: string }) {
 
 function MomentsView({ moments, loading }: { moments: MomentItem[]; loading: boolean }) {
   const [liked, setLiked] = useState<number[]>([]);
-  return <div tabIndex={0} aria-label="朋友圈内容" className="smooth-scroll min-h-0 flex-1 overflow-y-scroll px-4 py-5 focus:outline-none sm:px-7"><div className="mx-auto max-w-2xl space-y-4">{loading && <div className="flex items-center justify-center gap-2 rounded-2xl border border-primary/10 bg-primary/5 px-4 py-3 text-xs text-primary"><LoaderCircle className="size-3.5 animate-spin" />正在同步这条世界线的最新动态</div>}{moments.map((moment, index) => <article key={moment.id} className="rounded-[22px] border border-border/75 bg-card/88 p-5 shadow-[0_8px_30px_rgba(76,62,95,.06)]">
+  return <div aria-label="朋友圈内容" className="smooth-scroll min-h-0 flex-1 overflow-y-scroll px-4 py-5 sm:px-7"><div className="mx-auto max-w-2xl space-y-4">{loading && <div className="flex items-center justify-center gap-2 rounded-2xl border border-primary/10 bg-primary/5 px-4 py-3 text-xs text-primary"><LoaderCircle className="size-3.5 animate-spin" />正在同步这条世界线的最新动态</div>}{moments.map((moment, index) => <article key={moment.id} className="rounded-[22px] border border-border/75 bg-card/88 p-5 shadow-[0_8px_30px_rgba(76,62,95,.06)]">
     <header className="flex items-center gap-3"><span className={`grid size-10 place-items-center rounded-[14px] bg-gradient-to-br ${moment.tone} text-sm font-semibold text-white`}>{moment.avatar}</span><div><h3 className="text-sm font-medium">{moment.name}</h3><p className="mt-0.5 text-[10px] text-muted-foreground">{moment.time}</p></div></header>
     <p className="mt-4 text-sm leading-7">{moment.text}</p><div className={`mt-3 flex aspect-[16/7] items-end overflow-hidden rounded-2xl bg-gradient-to-br ${index === 0 ? 'from-[#bfd6dc] via-[#dad9df] to-[#e8bfa7]' : index === 1 ? 'from-[#d6d2d9] via-[#ece7e8] to-[#c8d8d7]' : 'from-[#d6c2d7] via-[#f0d8d4] to-[#cfb5c5]'} p-4`}><p className="max-w-xs rounded-xl bg-white/62 px-3 py-2 text-[11px] leading-5 text-[#62566b] backdrop-blur-sm">{moment.art}</p></div>
     <div className="mt-3 flex items-center justify-between text-[11px]"><span className="rounded-full bg-muted px-2.5 py-1 text-muted-foreground">{moment.tag}</span><button onClick={() => setLiked((current) => current.includes(index) ? current.filter((item) => item !== index) : [...current, index])} className={`transition ${liked.includes(index) ? 'text-[#c87882]' : 'text-muted-foreground hover:text-[#c87882]'}`}>♡ {liked.includes(index) ? '已喜欢' : '喜欢'}</button></div>
@@ -623,10 +663,36 @@ function MomentsView({ moments, loading }: { moments: MomentItem[]; loading: boo
 }
 
 function MapView({ city, onVisit }: { city: string; onVisit: (place: string) => void }) {
-  return <div tabIndex={0} aria-label="邀约地图内容" className="smooth-scroll min-h-0 flex-1 overflow-y-scroll px-4 py-5 focus:outline-none sm:px-7 sm:py-7"><div className="mx-auto max-w-3xl">
+  return <div aria-label="邀约地图内容" className="smooth-scroll min-h-0 flex-1 overflow-y-scroll px-4 py-5 sm:px-7 sm:py-7"><div className="mx-auto max-w-3xl">
     <div className="mb-5 rounded-[22px] border border-border/70 bg-card/82 p-5"><p className="font-serif text-xs uppercase tracking-[.18em] text-muted-foreground">Where the tide leads</p><h3 className="mt-2 font-serif text-2xl">{city || '你的城市'}</h3><p className="mt-2 text-xs leading-6 text-muted-foreground">世界线已经把祁煜嵌进这座城市。选一个地点，AI 会结合当前线索续写新的线下片段。</p></div>
     <div className="grid gap-3 sm:grid-cols-2">{locations.map((location) => <button key={location.name} onClick={() => onVisit(location.name)} className={`group relative min-h-44 overflow-hidden rounded-[22px] bg-gradient-to-br ${location.wash} p-5 text-left shadow-[0_8px_26px_rgba(82,70,104,.07)] ring-1 ring-border/60 transition hover:-translate-y-1 hover:shadow-[0_14px_34px_rgba(82,70,104,.12)]`}><span className="absolute -right-5 -top-7 font-serif text-[88px] font-light text-white/45">{location.icon}</span><span className="relative rounded-full bg-white/60 px-2.5 py-1 text-[10px] text-muted-foreground">{location.tag}</span><div className="relative mt-14"><h4 className="font-serif text-lg">{location.name}</h4><p className="mt-1 text-xs leading-5 text-muted-foreground">{location.desc}</p></div></button>)}</div>
   </div></div>;
+}
+
+function RewindView({ story, resetting, onReset }: { story: StoryState; resetting: boolean; onReset: () => void }) {
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  return <div aria-label="剧情回溯" className="smooth-scroll min-h-0 flex-1 overflow-y-scroll px-4 py-5 sm:px-7 sm:py-7">
+    <div className="mx-auto max-w-3xl space-y-4">
+      <section className="relative overflow-hidden rounded-[26px] bg-gradient-to-br from-[#7387a6] via-[#9ab9c2] to-[#dfa991] p-6 text-white shadow-[0_18px_42px_rgba(93,91,132,.18)] sm:p-8">
+        <div className="resonance-rings smaller" aria-hidden="true" />
+        <div className="relative max-w-xl"><span className="grid size-11 place-items-center rounded-2xl bg-white/14 ring-1 ring-white/25"><History className="size-5" /></span><p className="mt-8 text-[10px] uppercase tracking-[.24em] text-white/70">Return to the first tide</p><h3 className="mt-2 font-serif text-2xl sm:text-3xl">重新听见最初的门铃</h3><p className="mt-3 text-xs leading-6 text-white/80">只让主线回到故事开场。你与两个祁煜的私信，以及属于你的资料和模型连接，都不会被带走。</p></div>
+      </section>
+
+      <section className="grid gap-4 sm:grid-cols-2">
+        <div className="rounded-[22px] border border-border/75 bg-card/88 p-5 shadow-[0_8px_28px_rgba(76,62,95,.06)]"><p className="text-[11px] font-medium tracking-[.12em] text-muted-foreground">当前回响</p><div className="mt-4 flex items-end justify-between"><div><p className="font-serif text-xl">第 {story.chapter} 章</p><p className="mt-1 text-xs text-muted-foreground">{story.phase} · {story.place}</p></div><b className="font-serif text-2xl text-primary">{story.wish}%</b></div><div className="mt-4 h-1.5 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-gradient-to-r from-[#a19abb] to-[#dc9e88]" style={{ width: `${story.wish}%` }} /></div><div className="mt-4 flex items-center gap-2 rounded-xl bg-muted/55 px-3 py-2.5 text-xs"><Bookmark className="size-4 text-primary" /><span className="min-w-0 truncate">线索 · {story.clue}</span></div></div>
+        <div className="rounded-[22px] border border-border/75 bg-card/88 p-5 shadow-[0_8px_28px_rgba(76,62,95,.06)]"><p className="text-[11px] font-medium tracking-[.12em] text-muted-foreground">重置范围</p><div className="mt-4 space-y-3 text-xs leading-5"><div className="rounded-xl bg-[#f7eeee] px-3 py-2.5 text-[#8e5f60]"><b className="block">会回到开场</b><span className="mt-0.5 block opacity-80">章节、许愿值、地点、线索、正文与选择记录</span></div><div className="rounded-xl bg-[#edf3f3] px-3 py-2.5 text-[#58777b]"><b className="block">会原样保留</b><span className="mt-0.5 block opacity-80">私信、玩家资料、模型设置与 API Key</span></div></div></div>
+      </section>
+
+      <section className="rounded-[22px] border border-border/75 bg-card/88 p-5 sm:flex sm:items-center sm:justify-between sm:gap-6"><div><h4 className="font-serif text-lg">准备从头开始吗？</h4><p className="mt-1 text-xs leading-6 text-muted-foreground">重置后的主线无法在本站恢复，但你保留的私信仍可继续查看与发送。</p></div><Button variant="destructive" className="mt-4 h-11 w-full rounded-xl sm:mt-0 sm:w-auto" onClick={() => setConfirmOpen(true)} disabled={resetting}><RotateCcw />重置剧情</Button></section>
+    </div>
+
+    <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+      <AlertDialogContent>
+        <AlertDialogHeader><AlertDialogMedia className="bg-destructive/10 text-destructive"><RotateCcw /></AlertDialogMedia><AlertDialogTitle>确认重置剧情？</AlertDialogTitle><AlertDialogDescription>主线将回到第 1 章开场，当前章节、许愿值、线索和选择历史会被替换。私信、玩家资料、模型配置和 API Key 不受影响。</AlertDialogDescription></AlertDialogHeader>
+        <AlertDialogFooter><AlertDialogCancel>先不重置</AlertDialogCancel><AlertDialogAction variant="destructive" onClick={() => { setConfirmOpen(false); onReset(); }}>确认重置剧情</AlertDialogAction></AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  </div>;
 }
 
 function RightPanel({ story, profile, connected, protocol, onSettings }: { story: StoryState; profile: PlayerProfile; connected: boolean; protocol: ModelConfig['protocol']; onSettings: () => void }) {
