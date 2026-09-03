@@ -56,6 +56,7 @@ import {
   StoryState,
   streamModelReply,
 } from '@/lib/game';
+import { parseContinuation, parseStoryReply, storyCharacterCount } from '@/lib/story-parser';
 
 const STORAGE = {
   config: 'wish-qiyu:model-config', key: 'wish-qiyu:api-key', profile: 'wish-qiyu:profile',
@@ -121,29 +122,6 @@ function conversationPreview(messages: ChatMessage[]) {
 
 const MIN_STORY_CHARACTERS = 600;
 const MAP_UNLOCK_WISH = 30;
-
-function storyCharacterCount(paragraphs: string[]) {
-  return paragraphs.join('').match(/[\u3400-\u9fff]/g)?.length || 0;
-}
-
-function parseStory(raw: string) {
-  const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
-  const start = cleaned.indexOf('{');
-  const end = cleaned.lastIndexOf('}');
-  if (start < 0 || end <= start) throw new Error('模型没有返回可解析的剧情结构');
-  const data = JSON.parse(cleaned.slice(start, end + 1));
-  const paragraphs = Array.isArray(data.paragraphs) ? data.paragraphs.filter((item: unknown) => typeof item === 'string').slice(0, 8) : [];
-  const choices = Array.isArray(data.choices) ? data.choices.filter((item: unknown) => typeof item === 'string').slice(0, 4) : [];
-  if (!paragraphs.length || choices.length < 2) throw new Error('剧情结构不完整');
-  return {
-    phase: typeof data.phase === 'string' ? data.phase.slice(0, 12) : '此刻',
-    place: typeof data.place === 'string' ? data.place.slice(0, 24) : '未知地点',
-    mood: typeof data.mood === 'string' ? data.mood.slice(0, 24) : '若有所思',
-    clue: typeof data.clue === 'string' ? data.clue.slice(0, 36) : '尚未命名的线索',
-    paragraphs,
-    choices,
-  };
-}
 
 function parseMoments(raw: string, seed: number): MomentItem[] {
   const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
@@ -278,13 +256,13 @@ export default function Home() {
         apiKey,
         [
           { role: 'system', content: buildCharacterSystem(activeCharacter, profile, story) },
-          ...history.map((message) => ({ role: message.role, content: message.content })),
+          ...history.slice(-16).map((message) => ({ role: message.role, content: message.content })),
         ],
         (fullText) => setMessages((current) => ({
           ...current,
           [activeCharacter]: current[activeCharacter].map((message) => message.id === assistantId ? { ...message, content: fullText, status: 'sending' } : message),
         })),
-        controller.signal,
+        { signal: controller.signal, maxTokens: 420, temperature: 0.84 },
       );
       setMessages((current) => ({ ...current, [activeCharacter]: current[activeCharacter].map((message) => message.id === assistantId ? { ...message, status: 'sent' } : message) }));
       setStory((current) => ({ ...current, wish: Math.min(100, current.wish + 1) }));
@@ -317,27 +295,32 @@ export default function Home() {
         apiKey,
         [
           { role: 'system', content: buildStorySystem(profile, story) },
-          ...story.history.slice(-5).map((item) => ({ role: 'assistant' as const, content: item })),
+          ...story.history.slice(-2).map((item) => ({ role: 'assistant' as const, content: item.slice(-1800) })),
           { role: 'user', content: `玩家选择：${choice}\n请从当前片段自然继续，不要总结旧剧情。` },
         ],
         (text) => { raw = text; },
-        controller.signal,
+        { signal: controller.signal, maxTokens: 1600, temperature: 0.76, responseFormat: 'json' },
       );
-      let next = parseStory(raw);
-      for (let repair = 0; storyCharacterCount(next.paragraphs) < MIN_STORY_CHARACTERS && repair < 2; repair += 1) {
-        let revisedRaw = '';
+      let next = parseStoryReply(raw, story);
+      for (let extension = 0; storyCharacterCount(next.paragraphs) < MIN_STORY_CHARACTERS && extension < 2; extension += 1) {
+        let continuationRaw = '';
         const currentLength = storyCharacterCount(next.paragraphs);
+        const requestedLength = Math.max(140, MIN_STORY_CHARACTERS - currentLength + 60);
         await streamModelReply(
           config,
           apiKey,
           [
-            { role: 'system', content: buildStorySystem(profile, story) },
-            { role: 'user', content: `以下剧情草稿只有${currentLength}字，不符合不少于${MIN_STORY_CHARACTERS}字的要求。请保留事件逻辑与四个选择，完整重写为650至900字、6至8段的细腻剧情；不要总结、不要用重复句凑字数，只返回同样结构的合法 JSON。\n草稿：${JSON.stringify(next)}` },
+            { role: 'system', content: '你是中文互动小说续写者。始终用第二人称“你”，保持七分白描三分抒情，只续写新的情节，不总结、不重复。只输出2至3段连续正文，不要JSON、标题、选项或解释。' },
+            { role: 'user', content: `下面的剧情已有${currentLength}字。请从结尾无缝续写至少${requestedLength}个汉字，使事件自然推进，并保留祁煜的人设与当前氛围。\n剧情结尾：${next.paragraphs.join('\n').slice(-1200)}` },
           ],
-          (text) => { revisedRaw = text; },
-          controller.signal,
+          (text) => { continuationRaw = text; },
+          { signal: controller.signal, maxTokens: Math.min(760, Math.max(360, requestedLength * 2)), temperature: 0.76 },
         );
-        next = parseStory(revisedRaw);
+        const additions = parseContinuation(continuationRaw);
+        if (!additions.length) break;
+        const expanded = [...next.paragraphs, ...additions];
+        if (expanded.length > 8) expanded[7] = expanded.slice(7).join('');
+        next = { ...next, paragraphs: expanded.slice(0, 8) };
       }
       const finalLength = storyCharacterCount(next.paragraphs);
       if (finalLength < MIN_STORY_CHARACTERS) throw new Error(`模型连续返回少于${MIN_STORY_CHARACTERS}字的剧情，请重新调取`);
@@ -372,7 +355,7 @@ export default function Home() {
       await streamModelReply(config, apiKey, [
         { role: 'system', content: '你正在测试 API 连接。只回复四个字：连接成功' },
         { role: 'user', content: '测试连接' },
-      ], (text) => { reply = text; });
+      ], (text) => { reply = text; }, { maxTokens: 32, temperature: 0.2 });
       if (!reply) throw new Error('未收到文本');
       setTestState('success');
       setNotice('连接成功，祁煜已经能听见你了。');
@@ -407,7 +390,7 @@ export default function Home() {
           role: 'user',
           content: `当前剧情：第${story.chapter}章，${story.phase}，地点${story.place}，许愿值${story.wish}%，情绪${story.mood}，线索${story.clue}。最近片段：${story.paragraphs.at(-1)?.slice(0, 220) || '暂无'}。请生成与此刻同步的新朋友圈。`,
         },
-      ], (text) => { raw = text; });
+      ], (text) => { raw = text; }, { maxTokens: 900, temperature: 0.78, responseFormat: 'json' });
       setMomentFeed(parseMoments(raw, seed));
     } catch (error) {
       setNotice(`朋友圈已刷新为本地动态；AI 更新失败：${error instanceof Error ? error.message : '未知错误'}`);

@@ -111,7 +111,7 @@ export function buildStorySystem(profile: PlayerProfile, story: StoryState) {
 玩家在正文中只称“你”；城市：${profile.city || '未填写'}；身份：${profile.identity || '未填写'}；只可使用玩家提供的回忆：${profile.memory || '暂无'}。
 当前：第${story.chapter}章，${story.phase}，${story.place}，许愿回响${story.wish}%，情绪“${story.mood}”，线索“${story.clue}”。
 叙事必须始终用第二人称“你”指代玩家，绝不使用玩家姓名，也不用“她/他”代指玩家；人物对白统一使用中文双引号“”。
-只返回合法 JSON，不要代码围栏：{"phase":"时段","place":"地点","mood":"祁煜此刻的短情绪","clue":"新或保留的短线索","paragraphs":["6至8段细腻中文叙事，总计650至900个汉字，绝对不得少于600字"],"choices":["四个彼此不同、可执行且不剧透的行动"]}。每次只推进一个自然片段，完整呈现场景、感官细节、人物反应、自然对话与新的微小线索，不用重复句凑字数。严格保持七分白描、三分抒情：动作与环境要清晰具体，抒情只落在关键感官和情绪转折上；可以有成年人之间克制但强烈的暧昧张力，台词符合祁煜人设。`;
+只返回合法 JSON，不要代码围栏：{"phase":"时段","place":"地点","mood":"祁煜此刻的短情绪","clue":"新或保留的短线索","paragraphs":["5至7段细腻中文叙事，总计620至760个汉字，绝对不得少于600字"],"choices":["四个彼此不同、可执行且不剧透的行动"]}。每次只推进一个自然片段，完整呈现场景、感官细节、人物反应、自然对话与新的微小线索，不用重复句凑字数。严格保持七分白描、三分抒情：动作与环境要清晰具体，抒情只落在关键感官和情绪转折上；可以有成年人之间克制但强烈的暧昧张力，台词符合祁煜人设。`;
 }
 
 function endpointFor(config: ModelConfig) {
@@ -120,21 +120,39 @@ function endpointFor(config: ModelConfig) {
   return new URL(path, base).toString();
 }
 
-function requestBody(config: ModelConfig, messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>) {
+export interface ModelReplyOptions {
+  signal?: AbortSignal;
+  maxTokens?: number;
+  temperature?: number;
+  responseFormat?: 'text' | 'json';
+}
+
+function requestBody(config: ModelConfig, messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>, options: ModelReplyOptions) {
   const system = messages.filter((message) => message.role === 'system').map((message) => message.content).join('\n\n');
   const dialogue = messages.filter((message) => message.role !== 'system');
+  const maxTokens = options.maxTokens || 720;
+  const temperature = options.temperature ?? 0.82;
+  const wantsJson = options.responseFormat === 'json';
 
   if (config.protocol === 'anthropic') {
-    return { model: config.model, system, messages: dialogue, max_tokens: 2400, temperature: 0.86, stream: true };
+    return { model: config.model, system, messages: dialogue, max_tokens: maxTokens, temperature, stream: true };
   }
   if (config.protocol === 'gemini') {
     return {
       systemInstruction: { parts: [{ text: system }] },
       contents: dialogue.map((message) => ({ role: message.role === 'assistant' ? 'model' : 'user', parts: [{ text: message.content }] })),
-      generationConfig: { temperature: 0.86, maxOutputTokens: 2400 },
+      generationConfig: { temperature, maxOutputTokens: maxTokens, ...(wantsJson ? { responseMimeType: 'application/json' } : {}) },
     };
   }
-  return { model: config.model, messages, temperature: 0.86, max_tokens: 2400, stream: true };
+  return {
+    model: config.model,
+    messages,
+    temperature,
+    max_tokens: maxTokens,
+    stream: true,
+    ...(wantsJson ? { response_format: { type: 'json_object' } } : {}),
+    ...(/^https:\/\/api\.deepseek\.com\/?$/i.test(config.baseUrl.trim()) ? { thinking: { type: 'disabled' } } : {}),
+  };
 }
 
 function directHeaders(protocol: Protocol, apiKey: string) {
@@ -170,20 +188,20 @@ export async function streamModelReply(
   apiKey: string,
   messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
   onText: (fullText: string) => void,
-  signal?: AbortSignal,
+  options: ModelReplyOptions = {},
 ) {
   if (!apiKey.trim()) throw new Error('请填写 API Key');
   if (!config.model.trim()) throw new Error('请填写模型名称');
   if (!config.baseUrl.trim() || !config.apiPath.trim()) throw new Error('请填写 API Base URL 与 API 路径');
 
-  const body = requestBody(config, messages);
+  const body = requestBody(config, messages, options);
   let response: Response;
   try {
     response = await fetch(endpointFor(config), {
       method: 'POST',
       headers: directHeaders(config.protocol, apiKey),
       body: JSON.stringify(body),
-      signal,
+      signal: options.signal,
     });
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') throw error;
@@ -213,6 +231,14 @@ export async function streamModelReply(
   const decoder = new TextDecoder();
   let buffer = '';
   let fullText = '';
+  let lastEmission = 0;
+  const emit = (force = false) => {
+    const now = typeof performance === 'undefined' ? Date.now() : performance.now();
+    if (force || now - lastEmission >= 40) {
+      lastEmission = now;
+      onText(fullText);
+    }
+  };
   while (true) {
     const { value, done } = await reader.read();
     if (done) break;
@@ -228,7 +254,7 @@ export async function streamModelReply(
         const fragment = textFromPayload(JSON.parse(json));
         if (fragment) {
           fullText += fragment;
-          onText(fullText);
+          emit();
         }
       } catch {}
     }
@@ -236,9 +262,10 @@ export async function streamModelReply(
 
   if (!fullText && buffer.trim()) {
     try { fullText = textFromPayload(JSON.parse(buffer)); } catch { fullText = buffer.trim(); }
-    if (fullText) onText(fullText);
+    if (fullText) emit(true);
   }
   if (!fullText) throw new Error('模型流已结束，但没有收到文本内容');
+  emit(true);
   return fullText;
 }
 
