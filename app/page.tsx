@@ -8,6 +8,7 @@ import {
   ChevronRight,
   CircleAlert,
   Ellipsis,
+  Fish,
   Flame,
   History,
   KeyRound,
@@ -102,18 +103,28 @@ const MOMENT_TONES = [
 ];
 
 const MOMENT_LIBRARY: Array<Omit<MomentItem, 'id' | 'tone'>> = [
-  { name: '祁煜', avatar: '祁', time: '刚刚', text: '颜料里少了一种只在清晨出现的蓝。好在今天看见了。', art: '被晨光切成两半的调色盘，海蓝与淡金还未干透。', tag: '白沙湾', comment: '唐知理：所以画展的那幅完成了吗？' },
-  { name: '唐知理', avatar: '唐', time: '8分钟前', text: '今日工作提醒：请某位大艺术家不要把“寻找灵感”当成失联的正式理由。', art: '办公桌上的展览清单，末尾压着一枚贝壳。', tag: '工作日常', comment: '祁煜：措辞不够准确，退回重写。' },
-  { name: '谭灵', avatar: '灵', time: '23分钟前', text: '演出结束时，海边刚好起风。有人答应来看，最后只送来一束嘉兰百合。', art: '后台镜前一束卷瓣花，紫红花影落在节目单上。', tag: '散场之后', comment: '祁煜：花比迟到的人准时。' },
-  { name: '祁煜', avatar: '祁', time: '刚刚', text: '有人把伞忘在画室。雨停之前，失主最好亲自来取。', art: '窗边靠着一把浅色长伞，伞柄缠了一小段紫色丝带。', tag: 'Mo Art', comment: '唐知理：我作证，某人已经看那把伞五分钟了。' },
-  { name: '小鱼', avatar: '鱼', time: '信号延迟', text: '海面把同一轮月亮分成了两份。你看到的那一份，还完整吗？', art: '深蓝海面浮着断续银光，远处像有一座城市正在褪色。', tag: '另一侧', comment: '祁煜：……这条动态是谁发的？' },
-  { name: '唐知理', avatar: '唐', time: '31分钟前', text: '临时取消今日催稿。原因：画家本人声称要为一场“很重要的约会”调整配色。', art: '被红笔圈出的日程表旁，放着两张尚未使用的展览票。', tag: '行程变更', comment: '祁煜：引号可以删掉。' },
+  { name: '祁煜', avatar: '祁', time: '刚刚', text: '颜料里少了一种只在清晨出现的蓝。好在今天看见了。', art: '画面中央是一只沾着新颜料的调色盘，靠近窗边的一半落在清晨冷蓝色的光里，另一半被室内尚未熄灭的暖灯染成淡金。几支长短不一的画笔斜放在边缘，笔杆上留着干涸的紫色痕迹，海蓝颜料与一小团灰白刚刚被推开，还能看见刮刀经过时留下的细密纹路。背景里的落地窗只收进模糊海面和低低的云，玻璃上凝着薄雾，桌角压着一张没有署名的速写纸。整张照片没有刻意摆正，像祁煜停笔时随手拍下，却把光线落下的方向和颜料尚未干透的湿润质感留得很清楚。', tag: '白沙湾', comment: '唐知理：所以画展的那幅完成了吗？' },
+  { name: '唐知理', avatar: '唐', time: '8分钟前', text: '今日工作提醒：请某位大艺术家不要把“寻找灵感”当成失联的正式理由。', art: '照片从办公桌上方俯拍，一份展览进度表摊在深灰色桌垫中央，未完成的项目被红笔整齐圈出，旁边压着数张按时间排列的场地确认单。纸张右下角放着一枚浅色贝壳，显然与严肃的工作环境格格不入，贝壳下面还露出一小截写着“已读不回”的便签。手提电脑停在尚未发送的催稿邮件页面，冷白屏光映亮金属笔夹和半杯已经凉掉的咖啡。窗外城市轮廓被景深压得很淡，桌面却收拾得一丝不乱，只有那枚贝壳和被反复修改的措辞泄露出唐知理对某位画家的耐心正在经受考验。', tag: '工作日常', comment: '祁煜：措辞不够准确，退回重写。' },
+  { name: '谭灵', avatar: '灵', time: '23分钟前', text: '演出结束时，海边刚好起风。有人答应来看，最后只送来一束嘉兰百合。', art: '后台化妆镜前摆着一束刚送到的嘉兰百合，卷曲花瓣从深红过渡到柔和的金色，镜框灯泡把花影投在折起一角的节目单上。节目单旁放着取下来的耳饰、细长发簪和一只盛着温水的玻璃杯，杯壁留下浅浅雾气。镜中只映出谭灵紫黑长发的一小段侧影，她已经换下舞台服，肩头披着柔软外套，正伸手整理花束上没有落款的卡片。远处的幕布尚未完全合拢，走廊尽头透进海边剧场特有的淡青夜色。画面色彩明艳却不张扬，散场后的安静、风留下的微乱花叶和那份没有明说的关心都被收在同一层暖光里。', tag: '散场之后', comment: '祁煜：花比迟到的人准时。' },
+  { name: '祁煜', avatar: '祁', time: '刚刚', text: '有人把伞忘在画室。雨停之前，失主最好亲自来取。', art: '一把浅色长伞靠在Mo Art Studio的落地窗旁，伞面还没有完全收拢，细小水珠沿着布料褶痕落到石质地面，在窗下积成颜色很浅的湿痕。伞柄缠着一小段紫色丝带，结打得随意，旁边矮桌上放着半杯清水和一支洗净后尚未擦干的画笔。窗外雨幕把白沙湾压成灰蓝色，远处海面与天空的界线几乎看不清，室内壁炉却留着一圈温暖橙光。照片取景刻意避开了人，只在玻璃反射里留下模糊的紫色衣角。画面看似是在记录天气，视线最终却总会回到那把被妥善放好的伞上，像有人已经替失主预留了回来取它的位置。', tag: 'Mo Art', comment: '唐知理：我作证，某人已经看那把伞五分钟了。' },
+  { name: '小鱼', avatar: '鱼', time: '信号延迟', text: '海面把同一轮月亮分成了两份。你看到的那一份，还完整吗？', art: '画面像从一段不稳定的视频里截下：深蓝海面占据大部分视野，月光被潮汐拉成断续银线，每一段反光之间都隔着细小的黑色噪点。远处本该连成一片的城市灯火缺了几块，建筑轮廓在边缘出现轻微错位，像信号把相邻时刻叠在了一起。近处没有岸，也看不到拍摄者，只能从画面下方一闪而过的蓝色鳞光判断镜头离水面很近。天空中的月亮保持完整，倒影却像被无形裂缝分开。照片色调安静而寒冷，压缩留下的方形色块没有遮住景物，反而让这片海显得离你很远，又像正在试图穿过某种看不见的阻隔靠近。', tag: '另一侧', comment: '祁煜：……这条动态是谁发的？' },
+  { name: '唐知理', avatar: '唐', time: '31分钟前', text: '临时取消今日催稿。原因：画家本人声称要为一场“很重要的约会”调整配色。', art: '日程本摊开在靠窗的会议桌上，原本排得紧密的工作安排被红笔划去一段，旁边重新写下“暂缓确认”四个端正小字。两张尚未使用的展览票压在页面边缘，票面主视觉是克制的蓝紫渐变，座位信息被一支黑色钢笔巧妙挡住。桌上还摆着装好资料的文件夹、合起的手机和一只细边腕表，所有物品都对齐得近乎严谨；只有票根旁那张来自Mo Art Studio的便签歪斜放着，上面留下一小块试色。午后光线穿过百叶窗，在纸面切出整齐明暗条纹。照片没有出现人物，却把临时变更后的无奈、职业性的克制，以及某人为了约会理直气壮调整工作的事实交代得十分清楚。', tag: '行程变更', comment: '祁煜：引号可以删掉。' },
 ];
+
+const MOMENT_ART_SUPPLEMENT = '画面采用接近日常记录的自然视角，主体与周围环境都保持清晰可辨。前景保留材质与摆放留下的细节，中景交代光线落下的位置，背景则略微虚化，不出现与动态无关的人物。整体色调跟随发布者此刻的情绪变化，没有夸张滤镜，也不借配图提前透露尚未发生的剧情；边缘的留白、明暗层次和细小使用痕迹，让这张照片看起来像刚刚拍下，而不是为了展示而刻意布置。';
+
+function ensureMomentArt(value: string, fallback: string) {
+  const cleaned = value.replace(/\s+/g, ' ').trim();
+  if (cleaned.replace(/\s/g, '').length >= 150) return cleaned.slice(0, 360);
+  const combined = `${cleaned ? `${cleaned} ` : ''}${MOMENT_ART_SUPPLEMENT}`;
+  if (combined.replace(/\s/g, '').length >= 150) return combined.slice(0, 360);
+  return `${combined}${fallback}`.slice(0, 360);
+}
 
 function fallbackMoments(seed = 0): MomentItem[] {
   return Array.from({ length: 3 }, (_, index) => {
     const source = MOMENT_LIBRARY[(seed * 2 + index) % MOMENT_LIBRARY.length];
-    return { ...source, id: `local-${seed}-${index}`, tone: MOMENT_TONES[(seed + index) % MOMENT_TONES.length] };
+    return { ...source, art: ensureMomentArt(source.art, source.art), id: `local-${seed}-${index}`, tone: MOMENT_TONES[(seed + index) % MOMENT_TONES.length] };
   });
 }
 
@@ -154,13 +165,14 @@ function parseMoments(raw: string, seed: number): MomentItem[] {
   return data.moments.slice(0, 3).map((rawItem: unknown, index: number) => {
     const item = rawItem && typeof rawItem === 'object' ? rawItem as Record<string, unknown> : {};
     const name = typeof item.name === 'string' ? item.name.slice(0, 12) : '祁煜';
+    const fallback = MOMENT_LIBRARY[(seed * 2 + index) % MOMENT_LIBRARY.length];
     return {
       id: `ai-${seed}-${index}`,
       name,
       avatar: name.slice(0, 1) || '祁',
       time: typeof item.time === 'string' ? item.time.slice(0, 12) : '刚刚',
       text: typeof item.text === 'string' ? item.text.slice(0, 180) : '潮声刚刚更新了一条动态。',
-      art: typeof item.art === 'string' ? item.art.slice(0, 120) : '一张带着海风气息的照片。',
+      art: ensureMomentArt(typeof item.art === 'string' ? item.art : '', fallback.art),
       tag: typeof item.tag === 'string' ? item.tag.slice(0, 16) : '此刻',
       tone: MOMENT_TONES[(seed + index) % MOMENT_TONES.length],
       comment: typeof item.comment === 'string' ? item.comment.slice(0, 100) : '祁煜：被你看到了。',
@@ -414,7 +426,7 @@ export default function Home() {
           role: 'user',
           content: `当前剧情：第${story.chapter}章，${story.phase}，地点${story.place}，许愿值${story.wish}%，情绪${story.mood}，线索${story.clue}。最近片段：${story.paragraphs.at(-1)?.slice(0, 220) || '暂无'}。请生成与此刻同步的新朋友圈。`,
         },
-      ], (text) => { raw = text; }, { maxTokens: 900, temperature: 0.78, responseFormat: 'json' });
+      ], (text) => { raw = text; }, { maxTokens: 1500, temperature: 0.78, responseFormat: 'json' });
       setMomentFeed(parseMoments(raw, seed));
     } catch (error) {
       setNotice(`朋友圈已刷新为本地动态；AI 更新失败：${error instanceof Error ? error.message : '未知错误'}`);
@@ -609,6 +621,10 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   return <label className="block"><span className="mb-1.5 block text-xs font-medium text-foreground">{label}</span>{children}</label>;
 }
 
+function SwimmingFishLoader({ label }: { label: string }) {
+  return <span className="inline-flex items-center gap-2 text-primary" aria-live="polite"><span className="fish-swim-lane" aria-hidden="true"><Fish className="swimming-fish" /></span><span>{label}</span></span>;
+}
+
 function ChatView({ activeCharacter, active, messages, busy, endRef, scrollRef, onScroll, onSwitch, onRetry }: {
   activeCharacter: CharacterId; active: typeof contacts.qiyu; messages: ChatMessage[]; busy: boolean;
   endRef: React.RefObject<HTMLDivElement | null>; scrollRef: React.RefObject<HTMLDivElement | null>;
@@ -622,7 +638,7 @@ function ChatView({ activeCharacter, active, messages, busy, endRef, scrollRef, 
       <div className="text-center text-[10px] tracking-[.12em] text-muted-foreground">今天 · {activeCharacter === 'xiaoyu' ? '信号不稳定' : '清晨信号稳定'}</div>
       {messages.map((message) => <div key={message.id} className={`max-w-[84%] ${message.role === 'user' ? 'self-end' : 'self-start'}`}>
         <div className={`whitespace-pre-wrap rounded-[18px] px-4 py-3 text-[14px] leading-7 ${message.role === 'user' ? 'rounded-tr-[5px] bg-[#dacbdc] text-[#473d53]' : `rounded-tl-[5px] bg-card shadow-[0_8px_24px_rgba(91,77,116,.08)] ring-1 ${message.status === 'error' ? 'ring-[#dcaaa0]' : 'ring-border/60'} ${activeCharacter === 'xiaoyu' ? 'glitch-text' : ''}`}`}>
-          {message.content || <span className="inline-flex items-center gap-2 text-muted-foreground"><LoaderCircle className="size-3.5 animate-spin" />正在输入</span>}
+          {message.content || <SwimmingFishLoader label="正在输入" />}
         </div>
         <div className={`mt-1.5 flex items-center gap-1.5 text-[10px] text-muted-foreground ${message.role === 'user' ? 'justify-end pr-1' : 'pl-1'}`}><span>{message.role === 'assistant' ? active.name : '你'} · {message.time}{message.status === 'sending' && message.content ? ' · 生成中' : ''}{message.status === 'error' ? ' · 调取失败' : ''}</span>{message.role === 'assistant' && message.status === 'error' && <Button size="xs" variant="ghost" className="h-6 rounded-lg px-2 text-[10px] text-[#9a6258] hover:bg-[#fff0ec]" onClick={() => onRetry(message.id)} disabled={busy}><RefreshCw className="size-3" />重新生成</Button>}</div>
       </div>)}
@@ -639,7 +655,7 @@ function StoryView({ story, loading, onChoice }: { story: StoryState; loading: b
         <div className="resonance-rings smaller" aria-hidden="true" /><p className="relative text-[10px] uppercase tracking-[.24em] text-white/70">Chapter {String(story.chapter).padStart(2, '0')} · Wish echo</p><h3 className="relative mt-8 font-serif text-2xl">{story.place}</h3><div className="relative mt-3 flex flex-wrap gap-2 text-[10px]"><span className="rounded-full bg-white/14 px-2.5 py-1 ring-1 ring-white/20">{story.phase}</span><span className="rounded-full bg-white/14 px-2.5 py-1 ring-1 ring-white/20">情绪 · {story.mood}</span><span className="rounded-full bg-white/14 px-2.5 py-1 ring-1 ring-white/20">回响 · {story.wish}%</span></div>
       </div>
       <div className="mx-auto max-w-2xl px-1 py-7 sm:px-5">
-        {loading ? <div className="space-y-4"><p className="flex items-center gap-2 font-serif text-sm text-primary"><LoaderCircle className="size-4 animate-spin" />潮声正在续写下一页</p>{[92, 100, 78, 96].map((width) => <div key={width} className="h-3 rounded-full bg-muted animate-pulse" style={{ width: `${width}%` }} />)}</div> : <div className="story-copy space-y-5">{story.paragraphs.map((paragraph, index) => <StoryParagraph key={`${paragraph.slice(0, 12)}-${index}`} text={paragraph} />)}</div>}
+        {loading ? <div className="space-y-4"><p className="font-serif text-sm"><SwimmingFishLoader label="小鱼正衔着下一页向你游来" /></p>{[92, 100, 78, 96].map((width) => <div key={width} className="h-3 rounded-full bg-muted animate-pulse" style={{ width: `${width}%` }} />)}</div> : <div className="story-copy space-y-5">{story.paragraphs.map((paragraph, index) => <StoryParagraph key={`${paragraph.slice(0, 12)}-${index}`} text={paragraph} />)}</div>}
         <div className="my-7 flex items-center gap-3"><span className="h-px flex-1 bg-border" /><span className="flex items-center gap-1.5 text-[10px] tracking-[.16em] text-muted-foreground"><Bookmark className="size-3.5" />线索 · {story.clue}</span><span className="h-px flex-1 bg-border" /></div>
         <div className="space-y-2.5"><p className="mb-3 text-[11px] font-medium tracking-[.12em] text-muted-foreground">你的选择</p>{story.choices.map((choice, index) => <button key={choice} disabled={loading} onClick={() => onChoice(choice)} className="group flex w-full items-center gap-3 rounded-2xl border border-border bg-card px-4 py-3.5 text-left text-sm leading-6 shadow-[0_4px_18px_rgba(78,65,101,.05)] transition hover:-translate-y-0.5 hover:border-primary/35 hover:shadow-[0_8px_22px_rgba(78,65,101,.09)] disabled:opacity-50"><span className="grid size-7 shrink-0 place-items-center rounded-full bg-primary/10 font-serif text-xs text-primary">{String.fromCharCode(65 + index)}</span><span className="flex-1">{choice}</span><ChevronRight className="size-4 text-muted-foreground transition group-hover:translate-x-0.5 group-hover:text-primary" /></button>)}</div>
       </div>
@@ -654,7 +670,7 @@ function StoryParagraph({ text }: { text: string }) {
 
 function MomentsView({ moments, loading }: { moments: MomentItem[]; loading: boolean }) {
   const [liked, setLiked] = useState<number[]>([]);
-  return <div aria-label="朋友圈内容" className="smooth-scroll min-h-0 flex-1 overflow-y-scroll px-4 py-5 sm:px-7"><div className="mx-auto max-w-2xl space-y-4">{loading && <div className="flex items-center justify-center gap-2 rounded-2xl border border-primary/10 bg-primary/5 px-4 py-3 text-xs text-primary"><LoaderCircle className="size-3.5 animate-spin" />正在同步这条世界线的最新动态</div>}{moments.map((moment, index) => <article key={moment.id} className="rounded-[22px] border border-border/75 bg-card/88 p-5 shadow-[0_8px_30px_rgba(76,62,95,.06)]">
+  return <div aria-label="朋友圈内容" className="smooth-scroll min-h-0 flex-1 overflow-y-scroll px-4 py-5 sm:px-7"><div className="mx-auto max-w-2xl space-y-4">{loading && <div className="flex items-center justify-center rounded-2xl border border-primary/10 bg-primary/5 px-4 py-3 text-xs"><SwimmingFishLoader label="正在同步这条世界线的最新动态" /></div>}{moments.map((moment, index) => <article key={moment.id} className="rounded-[22px] border border-border/75 bg-card/88 p-5 shadow-[0_8px_30px_rgba(76,62,95,.06)]">
     <header className="flex items-center gap-3"><span className={`grid size-10 place-items-center rounded-[14px] bg-gradient-to-br ${moment.tone} text-sm font-semibold text-white`}>{moment.avatar}</span><div><h3 className="text-sm font-medium">{moment.name}</h3><p className="mt-0.5 text-[10px] text-muted-foreground">{moment.time}</p></div></header>
     <p className="mt-4 text-sm leading-7">{moment.text}</p><div className={`mt-3 flex aspect-[16/7] items-end overflow-hidden rounded-2xl bg-gradient-to-br ${index === 0 ? 'from-[#bfd6dc] via-[#dad9df] to-[#e8bfa7]' : index === 1 ? 'from-[#d6d2d9] via-[#ece7e8] to-[#c8d8d7]' : 'from-[#d6c2d7] via-[#f0d8d4] to-[#cfb5c5]'} p-4`}><p className="max-w-xs rounded-xl bg-white/62 px-3 py-2 text-[11px] leading-5 text-[#62566b] backdrop-blur-sm">{moment.art}</p></div>
     <div className="mt-3 flex items-center justify-between text-[11px]"><span className="rounded-full bg-muted px-2.5 py-1 text-muted-foreground">{moment.tag}</span><button onClick={() => setLiked((current) => current.includes(index) ? current.filter((item) => item !== index) : [...current, index])} className={`transition ${liked.includes(index) ? 'text-[#c87882]' : 'text-muted-foreground hover:text-[#c87882]'}`}>♡ {liked.includes(index) ? '已喜欢' : '喜欢'}</button></div>

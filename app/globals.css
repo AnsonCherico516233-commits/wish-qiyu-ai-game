@@ -74,6 +74,36 @@
 .smooth-scroll::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 999px; background: rgba(132,115,158,.24); background-clip: padding-box; }
 .smooth-scroll::-webkit-scrollbar-thumb:hover { background: rgba(132,115,158,.42); background-clip: padding-box; }
 
+.fish-swim-lane {
+  position: relative;
+  display: inline-block;
+  width: 5rem;
+  height: 1.35rem;
+  flex: 0 0 5rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, rgba(102, 171, 207, .08), transparent);
+}
+
+.swimming-fish {
+  position: absolute;
+  top: 50%;
+  left: -1.4rem;
+  width: 1.25rem;
+  height: 1.25rem;
+  color: #579dcc;
+  filter: drop-shadow(0 3px 5px rgba(69, 137, 181, .24));
+  animation: fish-swim-forward 1.65s cubic-bezier(.45, .04, .42, .96) infinite;
+}
+
+@keyframes fish-swim-forward {
+  0% { transform: translate(0, -50%) rotate(-4deg); opacity: 0; }
+  12% { opacity: 1; }
+  38% { transform: translate(2.8rem, -65%) rotate(3deg); }
+  68% { transform: translate(5.1rem, -38%) rotate(-3deg); opacity: 1; }
+  100% { transform: translate(6.6rem, -50%) rotate(2deg); opacity: 0; }
+}
+
 .story-copy {
   font-family: "Songti SC", SimSun, "Noto Serif SC", Georgia, serif;
   color: color-mix(in oklab, var(--foreground) 91%, #765e6d 9%);
@@ -112,4 +142,5 @@
 
 @media (prefers-reduced-motion: reduce) {
   html, .smooth-scroll { scroll-behavior: auto; }
+  .swimming-fish { left: 50%; animation: none; transform: translate(-50%, -50%); opacity: 1; }
 }
